@@ -1,0 +1,34 @@
+{
+  "contacts": [
+    {
+      "name": "fen",
+      "display_name": "fen",
+      "username": "bakaforlive"
+    },
+    {
+      "name": "alex",
+      "display_name": "Алекс",
+      "username": "alex"
+    },
+    {
+      "name": "dima",
+      "display_name": "Дима",
+      "username": "dima"
+    },
+    {
+      "name": "max",
+      "display_name": "Макс",
+      "username": "max"
+    },
+    {
+      "name": "ivan",
+      "display_name": "Иван",
+      "username": "ivan"
+    },
+    {
+      "name": "kate",
+      "display_name": "Катя",
+      "username": "kate"
+    }
+  ]
+}

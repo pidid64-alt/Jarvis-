@@ -1,0 +1,65 @@
+{
+  "_comment": "Расписание автономных проверок для autonomy.py. Каждое правило выполняется в фоне, результат читает LLM и решает, стоит ли писать в inbox.",
+  "rules": [
+    {
+      "id": "morning_updates",
+      "time": "09:00",
+      "check": "check_updates",
+      "prompt": "Утренняя проверка системных обновлений. Если 0 — не сообщай. Если больше 0 — коротко скажи сколько.",
+      "if_changed": true
+    },
+    {
+      "id": "hourly_failed_services",
+      "every_minutes": 60,
+      "check": "failed_services",
+      "prompt": "Проверка failed systemd-сервисов. Если ничего не упало — skip. Если есть упавшие — кратко перечисли (до 2 имён)."
+    },
+    {
+      "id": "cpu_temp_alert",
+      "every_minutes": 30,
+      "check": "cpu_temp",
+      "if_above": 75,
+      "prompt": "Температура CPU. Если выше 75 градусов — сообщи. Если норма — skip."
+    },
+    {
+      "id": "disk_space_warning",
+      "every_minutes": 120,
+      "check": "disk_space",
+      "if_below_percent": 15,
+      "prompt": "Свободное место на диске. Если меньше 15% — предупреди. Иначе skip."
+    },
+    {
+      "id": "high_memory",
+      "every_minutes": 30,
+      "check": "memory_usage",
+      "if_above_percent": 85,
+      "prompt": "Использование памяти. Если выше 85% — сообщи, иначе skip."
+    },
+    {
+      "id": "battery_low",
+      "every_minutes": 15,
+      "check": "battery_status",
+      "if_below_percent": 20,
+      "only_if_on_battery": true,
+      "prompt": "Заряд батареи. Если ниже 20% и ноут от батареи — предупреди. Иначе skip."
+    },
+    {
+      "id": "logs_errors",
+      "every_minutes": 60,
+      "check": "journal_errors",
+      "has_keywords": ["error", "failed", "critical"],
+      "prompt": "Ошибки в журнале. Если есть серьёзные — кратко сообщи. Если мусор — skip."
+    },
+    {
+      "id": "internet_check",
+      "every_minutes": 15,
+      "check": "internet_check",
+      "if_equals": "Интернета нет.",
+      "prompt": "Проверка интернета. Если нет — сообщи. Иначе skip."
+    }
+  ],
+  "quiet_hours": {"start": "23:00", "end": "07:00"},
+  "check_scripts_dir": "$HOME/jarvis/scripts",
+  "inbox_file": "inbox.json",
+  "min_notify_interval_seconds": 300
+}

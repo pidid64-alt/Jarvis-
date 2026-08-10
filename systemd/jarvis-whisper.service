@@ -1,0 +1,13 @@
+[Unit]
+Description=Jarvis - whisper.cpp STT server
+After=network.target sound.target
+
+[Service]
+Type=simple
+ExecStart=%h/jarvis/whisper.cpp/build/bin/whisper-server --host 127.0.0.1 --port 8081 -m %h/jarvis/models/ggml-base-q5_1.bin -l ru
+Restart=on-failure
+RestartSec=3
+Nice=5
+
+[Install]
+WantedBy=default.target

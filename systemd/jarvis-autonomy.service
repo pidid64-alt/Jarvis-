@@ -1,0 +1,13 @@
+[Unit]
+Description=Jarvis - autonomy daemon (scheduled LLM-driven notifications)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/jarvis/venv/bin/python3 %h/jarvis/autonomy.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

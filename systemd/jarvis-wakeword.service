@@ -1,0 +1,13 @@
+[Unit]
+Description=Jarvis - wake-word listener ("Джарвис")
+After=jarvis.service sound.target
+Wants=jarvis.service
+
+[Service]
+Type=simple
+ExecStart=%h/jarvis/venv/bin/python3 %h/jarvis/wakeword.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

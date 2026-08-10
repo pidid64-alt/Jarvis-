@@ -1,0 +1,11 @@
+{
+  "model_path": "jarvis.onnx",
+  "sample_rate": 16000,
+  "threshold": 0.25,
+  "cooldown_seconds": 3.0,
+  "chunk_size": 1280,
+  "device": 13,
+  "trigger_frames": 3,
+  "_comment_threshold": "0.25 — мягкий порог; реальный триггер требует trigger_frames подряд выше порога (гистерезис)",
+  "_comment_trigger_frames": "сколько окон по 80мс подряд должны превысить порог (3 = ~240мс непрерывной детекции)"
+}

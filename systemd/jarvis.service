@@ -1,0 +1,13 @@
+[Unit]
+Description=Jarvis - voice control core
+After=jarvis-whisper.service jarvis-piper.service sound.target
+Wants=jarvis-whisper.service jarvis-piper.service
+
+[Service]
+Type=simple
+ExecStart=%h/jarvis/venv/bin/python3 %h/jarvis/jarvis.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

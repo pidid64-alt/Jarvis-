@@ -1,0 +1,13 @@
+[Unit]
+Description=Jarvis - Piper TTS server
+After=network.target sound.target
+
+[Service]
+Type=simple
+ExecStart=%h/jarvis/venv/bin/python3 -m piper.http_server --host 127.0.0.1 --port 5000 -m ru_RU-dmitri-medium --data-dir %h/jarvis/models
+Restart=on-failure
+RestartSec=3
+Nice=5
+
+[Install]
+WantedBy=default.target

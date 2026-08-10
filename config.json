@@ -1,0 +1,26 @@
+{
+  "whisper_url": "http://127.0.0.1:8081/inference",
+  "piper_url": "http://127.0.0.1:5000/synthesize",
+  "language": "ru",
+  "sample_rate": 16000,
+  "record_seconds": 4,
+  "match_threshold": 0.6,
+  "http_timeout": 30,
+  "vad_aggressiveness": 2,
+  "vad_wait_speech_seconds": 4.0,
+  "vad_silence_seconds": 0.9,
+  "max_record_seconds": 12.0,
+  "beep_command": "paplay /usr/share/sounds/freedesktop/stereo/message.oga",
+  "llm": {
+    "_comment": "LLM-парсер через OmniRoute (localhost). Если api_key_env не задан в окружении — fallback на старый match_command.",
+    "enabled": true,
+    "base_url": "http://localhost:20128/v1",
+    "api_key_env": "OMNIROUTE_API_KEY",
+    "model": "",
+    "max_tokens": 300,
+    "timeout_seconds": 8,
+    "max_retries": 1,
+    "fallback_to_match": true,
+    "conversation_window_seconds": 30
+  }
+}

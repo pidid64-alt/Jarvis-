@@ -1,0 +1,4113 @@
+{
+  "commands": [
+    {
+      "id": "health_check",
+      "phrases": [
+        "ты тут",
+        "ты на связи",
+        "джарвис ты здесь",
+        "проверка связи"
+      ],
+      "command": "true",
+      "response": "Да, я на связи.",
+      "speak_output": false,
+      "description": "Проверка связи с пользователем. Просто отвечает, что Джарвис на связи.",
+      "tags": [
+        "meta"
+      ]
+    },
+    {
+      "id": "system_status",
+      "phrases": [
+        "статус системы",
+        "как система",
+        "как дела с системой",
+        "покажи статус"
+      ],
+      "command": "bash $HOME/jarvis/scripts/status.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Полный статус системы: CPU, RAM, диск, uptime, сеть. Читает результат вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "disk_space",
+      "phrases": [
+        "сколько места на диске",
+        "свободное место",
+        "место на диске"
+      ],
+      "command": "bash $HOME/jarvis/scripts/diskspace.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Сколько свободного места на диске. Говорит результат вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "network_info",
+      "phrases": [
+        "мой айпи",
+        "покажи айпи",
+        "какой адрес в сети",
+        "сетевой адрес"
+      ],
+      "command": "bash $HOME/jarvis/scripts/netinfo.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Показать локальный и публичный IP-адреса. Говорит вслух.",
+      "tags": [
+        "info",
+        "network"
+      ]
+    },
+    {
+      "id": "restart_network",
+      "phrases": [
+        "перезапусти сеть",
+        "перезагрузи сеть",
+        "рестарт сети"
+      ],
+      "command": "systemctl restart NetworkManager",
+      "response": "Сетевой менеджер перезапущен.",
+      "speak_output": false,
+      "description": "Перезапустить NetworkManager.",
+      "tags": [
+        "system",
+        "network"
+      ]
+    },
+    {
+      "id": "lock_screen",
+      "phrases": [
+        "заблокируй экран",
+        "заблокировать экран",
+        "включи замок"
+      ],
+      "command": "xflock4",
+      "response": "Блокирую экран.",
+      "speak_output": false,
+      "speak_before": true,
+      "description": "Заблокировать экран (xflock4). Озвучивает ответ ДО блокировки.",
+      "tags": [
+        "system",
+        "screen"
+      ]
+    },
+    {
+      "id": "toggle_mute",
+      "phrases": [
+        "выключи звук",
+        "заглуши звук",
+        "включи звук",
+        "переключи звук"
+      ],
+      "command": "pactl set-sink-mute @DEFAULT_SINK@ toggle",
+      "response": "Готово.",
+      "speak_output": false,
+      "description": "Включить/выключить (toggle) звук на default sink.",
+      "tags": [
+        "media",
+        "audio"
+      ]
+    },
+    {
+      "id": "system_update",
+      "phrases": [
+        "обнови систему",
+        "запусти обновление",
+        "обновить систему"
+      ],
+      "command": "sudo pacman -Syu --noconfirm",
+      "response": "Запускаю обновление системы в фоне, скажу отдельно, когда закончу.",
+      "done_message": "Обновление системы завершено.",
+      "speak_output": false,
+      "background": true,
+      "min_score": 0.85,
+      "confirm": true,
+      "confirm_prompt": "Точно запустить обновление системы? Скажи да.",
+      "description": "Обновить системные пакеты через pacman -Syu в фоне. Требует подтверждения.",
+      "tags": [
+        "system",
+        "package",
+        "dangerous"
+      ]
+    },
+    {
+      "id": "poweroff",
+      "phrases": [
+        "выключи компьютер",
+        "выключить компьютер",
+        "заверши работу"
+      ],
+      "command": "systemctl poweroff",
+      "response": "Выключаю компьютер.",
+      "speak_output": false,
+      "speak_before": true,
+      "min_score": 0.9,
+      "confirm": true,
+      "confirm_prompt": "Точно выключить компьютер? Скажи да.",
+      "description": "Выключить компьютер (systemctl poweroff). Требует подтверждения.",
+      "tags": [
+        "system",
+        "power",
+        "dangerous"
+      ]
+    },
+    {
+      "id": "reboot",
+      "phrases": [
+        "перезагрузи компьютер",
+        "перезагрузи систему",
+        "ребут"
+      ],
+      "command": "systemctl reboot",
+      "response": "Перезагружаюсь.",
+      "speak_output": false,
+      "speak_before": true,
+      "min_score": 0.9,
+      "confirm": true,
+      "confirm_prompt": "Точно перезагрузить? Скажи да.",
+      "description": "Перезагрузить компьютер (systemctl reboot). Требует подтверждения.",
+      "tags": [
+        "system",
+        "power",
+        "dangerous"
+      ]
+    },
+    {
+      "id": "logout",
+      "phrases": [
+        "выйди из сессии",
+        "разлогинь меня",
+        "заверши сессию"
+      ],
+      "command": "xfce4-session-logout --logout",
+      "response": "Выхожу из сессии.",
+      "speak_output": false,
+      "speak_before": true,
+      "min_score": 0.85,
+      "confirm": true,
+      "confirm_prompt": "Точно завершить сессию? Скажи да.",
+      "description": "Выйти из текущей XFCE-сессии. Требует подтверждения.",
+      "tags": [
+        "system",
+        "dangerous"
+      ]
+    },
+    {
+      "id": "cpu_temp",
+      "phrases": [
+        "температура процессора",
+        "горячий ли процессор",
+        "какая температура"
+      ],
+      "command": "bash $HOME/jarvis/scripts/cputemp.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Текущая температура процессора. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "top_processes",
+      "phrases": [
+        "что грузит процессор",
+        "покажи процессы",
+        "топ процессов"
+      ],
+      "command": "bash $HOME/jarvis/scripts/topprocs.sh",
+      "response": "Больше всего грузят:",
+      "speak_output": true,
+      "description": "Топ процессов, грузящих CPU/RAM. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "battery_status",
+      "phrases": [
+        "заряд батареи",
+        "сколько заряда",
+        "уровень батареи"
+      ],
+      "command": "bash $HOME/jarvis/scripts/battery.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Текущий заряд батареи. Говорит вслух.",
+      "tags": [
+        "info",
+        "power"
+      ]
+    },
+    {
+      "id": "kernel_version",
+      "phrases": [
+        "какое ядро",
+        "версия ядра",
+        "покажи ядро"
+      ],
+      "command": "uname -r",
+      "response": "Версия ядра:",
+      "speak_output": true,
+      "description": "Версия ядра Linux (uname -r). Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "listening_ports",
+      "phrases": [
+        "какие порты слушают",
+        "открытые порты",
+        "покажи порты"
+      ],
+      "command": "bash $HOME/jarvis/scripts/ports.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Какие сетевые порты сейчас слушаются. Говорит вслух.",
+      "tags": [
+        "info",
+        "network"
+      ]
+    },
+    {
+      "id": "logged_users",
+      "phrases": [
+        "кто в системе",
+        "залогиненные пользователи",
+        "кто залогинен"
+      ],
+      "command": "who | awk '{print $1}' | sort -u | tr '\\n' ' '",
+      "response": "Сейчас в системе:",
+      "speak_output": true,
+      "description": "Список залогиненных пользователей. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "wifi_off",
+      "phrases": [
+        "выключи вайфай",
+        "отключи вайфай",
+        "выключи вай-фай"
+      ],
+      "command": "nmcli radio wifi off",
+      "response": "Вай-фай выключен.",
+      "speak_output": false,
+      "description": "Выключить Wi-Fi (nmcli radio wifi off).",
+      "tags": [
+        "network"
+      ]
+    },
+    {
+      "id": "wifi_on",
+      "phrases": [
+        "включи вайфай",
+        "включи вай-фай"
+      ],
+      "command": "nmcli radio wifi on",
+      "response": "Вай-фай включён.",
+      "speak_output": false,
+      "description": "Включить Wi-Fi (nmcli radio wifi on).",
+      "tags": [
+        "network"
+      ]
+    },
+    {
+      "id": "internet_check",
+      "phrases": [
+        "есть ли интернет",
+        "проверь интернет",
+        "работает ли интернет"
+      ],
+      "command": "ping -c 2 -W 1 1.1.1.1 >/dev/null 2>&1 && echo 'Интернет есть.' || echo 'Интернета нет.'",
+      "response": "",
+      "speak_output": true,
+      "timeout": 6,
+      "description": "Проверить наличие интернета (ping 1.1.1.1). Говорит вслух.",
+      "tags": [
+        "info",
+        "network"
+      ]
+    },
+    {
+      "id": "tailscale_status",
+      "phrases": [
+        "статус тейлскейл",
+        "статус vpn",
+        "подключен ли тейлскейл"
+      ],
+      "command": "tailscale status >/dev/null 2>&1 && echo 'Тейлскейл подключен.' || echo 'Тейлскейл не подключен.'",
+      "response": "",
+      "speak_output": true,
+      "description": "Статус Tailscale VPN. Говорит вслух.",
+      "tags": [
+        "info",
+        "network"
+      ]
+    },
+    {
+      "id": "volume_up",
+      "phrases": [
+        "громче",
+        "увеличь громкость",
+        "прибавь звук"
+      ],
+      "command": "pactl set-sink-volume @DEFAULT_SINK@ +10%",
+      "response": "Громче.",
+      "speak_output": false,
+      "description": "Увеличить громкость на 10%.",
+      "tags": [
+        "media",
+        "audio"
+      ]
+    },
+    {
+      "id": "volume_down",
+      "phrases": [
+        "тише",
+        "уменьши громкость",
+        "убавь звук"
+      ],
+      "command": "pactl set-sink-volume @DEFAULT_SINK@ -10%",
+      "response": "Тише.",
+      "speak_output": false,
+      "description": "Уменьшить громкость на 10%.",
+      "tags": [
+        "media",
+        "audio"
+      ]
+    },
+    {
+      "id": "open_terminal",
+      "phrases": [
+        "открой терминал",
+        "запусти терминал"
+      ],
+      "command": "xfce4-terminal &",
+      "response": "Открываю терминал.",
+      "speak_output": false,
+      "description": "Открыть новый xfce4-terminal.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "open_browser",
+      "phrases": [
+        "открой браузер",
+        "запусти браузер"
+      ],
+      "command": "firefox &",
+      "response": "Открываю браузер.",
+      "speak_output": false,
+      "description": "Открыть Firefox.",
+      "tags": [
+        "app",
+        "browser"
+      ]
+    },
+    {
+      "id": "open_files",
+      "phrases": [
+        "открой файлы",
+        "открой проводник",
+        "открой файловый менеджер"
+      ],
+      "command": "thunar &",
+      "response": "Открываю файлы.",
+      "speak_output": false,
+      "description": "Открыть файловый менеджер Thunar.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "close_window",
+      "phrases": [
+        "закрой окно",
+        "закрой это окно"
+      ],
+      "command": "xdotool getactivewindow windowkill",
+      "response": "Закрываю окно.",
+      "speak_output": false,
+      "description": "Закрыть активное окно (xdotool windowkill).",
+      "tags": [
+        "window"
+      ]
+    },
+    {
+      "id": "screenshot",
+      "phrases": [
+        "сделай скриншот",
+        "сними экран"
+      ],
+      "command": "xfce4-screenshooter -f -s \"$HOME/Pictures\"",
+      "response": "Снимаю экран.",
+      "speak_output": false,
+      "description": "Снимок всего экрана в папку Pictures.",
+      "tags": [
+        "screen",
+        "media"
+      ]
+    },
+    {
+      "id": "check_updates",
+      "phrases": [
+        "есть обновления",
+        "проверь обновления",
+        "сколько обновлений"
+      ],
+      "command": "bash $HOME/jarvis/scripts/checkupdates.sh",
+      "response": "",
+      "speak_output": true,
+      "timeout": 20,
+      "description": "Проверить количество системных обновлений pacman. Говорит вслух.",
+      "tags": [
+        "info",
+        "system",
+        "package"
+      ]
+    },
+    {
+      "id": "clean_package_cache",
+      "phrases": [
+        "почисти кэш пакетов",
+        "очисти кэш пакетов"
+      ],
+      "command": "sudo paccache -r",
+      "response": "Кэш пакетов почищен.",
+      "speak_output": false,
+      "timeout": 30,
+      "description": "Очистить кэш пакетов pacman (paccache -r).",
+      "tags": [
+        "system",
+        "package"
+      ]
+    },
+    {
+      "id": "orphan_packages",
+      "phrases": [
+        "покажи ненужные пакеты",
+        "осиротевшие пакеты",
+        "сколько сиротских пакетов"
+      ],
+      "command": "pacman -Qtdq 2>/dev/null | wc -l",
+      "response": "Ненужных пакетов:",
+      "speak_output": true,
+      "description": "Сколько пакетов-сирот в системе. Говорит вслух.",
+      "tags": [
+        "info",
+        "package"
+      ]
+    },
+    {
+      "id": "docker_status",
+      "phrases": [
+        "статус докера",
+        "что в докере",
+        "покажи контейнеры"
+      ],
+      "command": "bash $HOME/jarvis/scripts/dockerstatus.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Статус Docker-контейнеров. Говорит вслух.",
+      "tags": [
+        "info",
+        "dev"
+      ]
+    },
+    {
+      "id": "docker_cleanup",
+      "phrases": [
+        "почисти докер",
+        "очисти докер"
+      ],
+      "command": "docker system prune -f",
+      "response": "Чищу докер в фоне.",
+      "done_message": "Докер почищен.",
+      "speak_output": false,
+      "background": true,
+      "description": "Очистить неиспользуемые Docker-данные в фоне.",
+      "tags": [
+        "dev",
+        "package",
+        "dangerous"
+      ]
+    },
+    {
+      "id": "empty_trash",
+      "phrases": [
+        "очисти корзину",
+        "почисти корзину"
+      ],
+      "command": "rm -rf \"$HOME/.local/share/Trash/files/\"* \"$HOME/.local/share/Trash/info/\"* 2>/dev/null",
+      "response": "Корзина очищена.",
+      "speak_output": false,
+      "description": "Очистить корзину.",
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "what_time",
+      "phrases": [
+        "который час",
+        "сколько времени",
+        "скажи время"
+      ],
+      "command": "date '+Сейчас %H:%M.'",
+      "response": "",
+      "speak_output": true,
+      "description": "Сказать текущее время голосом.",
+      "tags": [
+        "info"
+      ]
+    },
+    {
+      "id": "ollama_status",
+      "phrases": [
+        "жива ли нейронка",
+        "статус олламы",
+        "работает ли модель"
+      ],
+      "command": "systemctl is-active ollama 2>/dev/null || echo 'не найдена как сервис'",
+      "response": "Статус нейросети:",
+      "speak_output": true,
+      "description": "Работает ли Ollama-сервис. Говорит вслух.",
+      "tags": [
+        "info",
+        "dev"
+      ]
+    },
+    {
+      "id": "rat_hunt_scan",
+      "phrases": [
+        "запусти проверку безопасности",
+        "просканируй систему",
+        "запусти рат хант"
+      ],
+      "command": "bash $HOME/rat_hunt.sh",
+      "response": "Запускаю проверку безопасности в фоне.",
+      "done_message": "Проверка безопасности завершена, гляну лог.",
+      "speak_output": false,
+      "background": true,
+      "description": "Запустить проверку безопасности rat_hunt.sh в фоне.",
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "id": "restart_litvin",
+      "phrases": [
+        "перезапусти литвина",
+        "перезагрузи литвина",
+        "рестарт литвина"
+      ],
+      "command": "systemctl --user restart litvin.service",
+      "response": "Перезапускаю Литвина.",
+      "speak_output": false,
+      "description": "Перезапустить пользовательский сервис litvin.",
+      "tags": [
+        "dev"
+      ]
+    },
+    {
+      "id": "swap_usage",
+      "phrases": [
+        "сколько своп",
+        "использование подкачки",
+        "статус свопа"
+      ],
+      "command": "free -h | awk 'NR==3{print \"Подкачка: \" $3 \" из \" $2}'",
+      "response": "",
+      "speak_output": true,
+      "description": "Использование подкачки swap. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "zram_status",
+      "phrases": [
+        "статус зрам",
+        "работает ли зрам"
+      ],
+      "command": "bash $HOME/jarvis/scripts/zramstatus.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Статус zram. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "failed_services",
+      "phrases": [
+        "есть сломанные сервисы",
+        "покажи сломанные сервисы",
+        "какие сервисы упали"
+      ],
+      "command": "bash $HOME/jarvis/scripts/failedservices.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Какие systemd-сервисы упали. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "journal_errors",
+      "phrases": [
+        "покажи ошибки в логах",
+        "недавние ошибки системы",
+        "есть ошибки в журнале"
+      ],
+      "command": "bash $HOME/jarvis/scripts/recentlogs.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Недавние ошибки в системном журнале. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "last_boot",
+      "phrases": [
+        "когда последняя загрузка",
+        "когда включили компьютер",
+        "когда был запуск системы"
+      ],
+      "command": "bash $HOME/jarvis/scripts/lastreboot.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Когда была последняя загрузка системы. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "clear_clipboard",
+      "phrases": [
+        "очисти буфер обмена",
+        "почисти буфер обмена"
+      ],
+      "command": "echo -n | xclip -selection clipboard",
+      "response": "Буфер обмена очищен.",
+      "speak_output": false,
+      "description": "Очистить буфер обмена.",
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "media_play_pause",
+      "phrases": [
+        "поставь на паузу музыку",
+        "продолжи музыку",
+        "плей пауза"
+      ],
+      "command": "playerctl play-pause",
+      "response": "Готово.",
+      "speak_output": false,
+      "description": "Воспроизвести/пауза в playerctl.",
+      "tags": [
+        "media"
+      ]
+    },
+    {
+      "id": "media_next",
+      "phrases": [
+        "следующий трек",
+        "переключи трек",
+        "следующая песня"
+      ],
+      "command": "playerctl next",
+      "response": "Дальше.",
+      "speak_output": false,
+      "description": "Следующий трек в playerctl.",
+      "tags": [
+        "media"
+      ]
+    },
+    {
+      "id": "media_prev",
+      "phrases": [
+        "предыдущий трек",
+        "прошлая песня",
+        "включи предыдущий трек"
+      ],
+      "command": "playerctl previous",
+      "response": "Назад.",
+      "speak_output": false,
+      "description": "Предыдущий трек в playerctl.",
+      "tags": [
+        "media"
+      ]
+    },
+    {
+      "id": "brightness_up",
+      "phrases": [
+        "ярче экран",
+        "прибавь яркость",
+        "сделай ярче"
+      ],
+      "command": "brightnessctl set +10%",
+      "response": "Ярче.",
+      "speak_output": false,
+      "description": "Увеличить яркость экрана на 10%.",
+      "tags": [
+        "screen"
+      ]
+    },
+    {
+      "id": "brightness_down",
+      "phrases": [
+        "темнее экран",
+        "убавь яркость",
+        "сделай темнее"
+      ],
+      "command": "brightnessctl set 10%-",
+      "response": "Темнее.",
+      "speak_output": false,
+      "description": "Уменьшить яркость экрана на 10%.",
+      "tags": [
+        "screen"
+      ]
+    },
+    {
+      "id": "bluetooth_on",
+      "phrases": [
+        "включи блютуз",
+        "включи bluetooth"
+      ],
+      "command": "bluetoothctl power on",
+      "response": "Блютуз включён.",
+      "speak_output": false,
+      "description": "Включить Bluetooth.",
+      "tags": [
+        "network"
+      ]
+    },
+    {
+      "id": "bluetooth_off",
+      "phrases": [
+        "выключи блютуз",
+        "выключи bluetooth"
+      ],
+      "command": "bluetoothctl power off",
+      "response": "Блютуз выключен.",
+      "speak_output": false,
+      "description": "Выключить Bluetooth.",
+      "tags": [
+        "network"
+      ]
+    },
+    {
+      "id": "aur_updates",
+      "phrases": [
+        "проверь аур обновления",
+        "есть обновления из аур",
+        "статус аур"
+      ],
+      "command": "bash $HOME/jarvis/scripts/aurupdates.sh",
+      "response": "",
+      "speak_output": true,
+      "timeout": 25
+    },
+    {
+      "id": "npm_cache_clean",
+      "phrases": [
+        "почисти кэш нпм",
+        "очисти npm кэш"
+      ],
+      "command": "npm cache clean --force",
+      "response": "Кэш npm очищен.",
+      "speak_output": false,
+      "timeout": 30,
+      "description": "Очистить кэш npm.",
+      "tags": [
+        "dev",
+        "package"
+      ]
+    },
+    {
+      "id": "pip_cache_clean",
+      "phrases": [
+        "почисти кэш пип",
+        "очисти pip кэш"
+      ],
+      "command": "pip cache purge",
+      "response": "Кэш pip очищен.",
+      "speak_output": false,
+      "timeout": 30,
+      "description": "Очистить кэш pip.",
+      "tags": [
+        "dev",
+        "package"
+      ]
+    },
+    {
+      "id": "git_dirty_repos",
+      "phrases": [
+        "покажи грязные репозитории",
+        "где незакоммиченные изменения",
+        "есть незакоммиченные правки"
+      ],
+      "command": "bash $HOME/jarvis/scripts/gitdirty.sh",
+      "response": "",
+      "speak_output": true,
+      "timeout": 20,
+      "description": "Где есть незакоммиченные изменения в git-репозиториях. Говорит вслух.",
+      "tags": [
+        "info",
+        "dev"
+      ]
+    },
+    {
+      "id": "firewall_status",
+      "phrases": [
+        "статус файрвола",
+        "включен ли файрвол"
+      ],
+      "command": "bash $HOME/jarvis/scripts/firewall.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Статус файрвола. Говорит вслух.",
+      "tags": [
+        "info",
+        "network"
+      ]
+    },
+    {
+      "id": "tailscale_ip",
+      "phrases": [
+        "покажи тейлскейл айпи",
+        "какой адрес в тейлскейле"
+      ],
+      "command": "ip=$(tailscale ip -4 2>/dev/null | head -1); if [ -z \"$ip\" ]; then echo \"Тейлскейл не отвечает.\"; else echo \"$ip\" | sed \"s/\\./ точка /g\"; fi",
+      "response": "",
+      "speak_output": true,
+      "description": "IP-адрес в Tailscale. Говорит вслух.",
+      "tags": [
+        "info",
+        "network"
+      ]
+    },
+    {
+      "id": "restart_noxy",
+      "phrases": [
+        "перезапусти нокси",
+        "перезагрузи нокси",
+        "рестарт нокси"
+      ],
+      "command": "systemctl --user restart noxy.service",
+      "response": "Перезапускаю NOXY.",
+      "speak_output": false,
+      "description": "Перезапустить пользовательский сервис noxy (NOXY).",
+      "tags": [
+        "dev"
+      ]
+    },
+    {
+      "id": "restart_ollama",
+      "phrases": [
+        "перезапусти нейронку",
+        "перезапусти олламу",
+        "рестарт оллама"
+      ],
+      "command": "systemctl restart ollama",
+      "response": "Перезапускаю Ollama.",
+      "speak_output": false,
+      "description": "Перезапустить системный сервис Ollama.",
+      "tags": [
+        "dev"
+      ]
+    },
+    {
+      "id": "cpu_governor_performance",
+      "phrases": [
+        "включи максимальную производительность",
+        "режим производительности",
+        "переключи в производительность"
+      ],
+      "command": "sudo cpupower frequency-set -g performance",
+      "response": "Включаю режим производительности.",
+      "speak_output": false,
+      "description": "Переключить CPU в режим максимальной производительности.",
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "cpu_governor_powersave",
+      "phrases": [
+        "включи энергосбережение",
+        "режим энергосбережения",
+        "переключи в энергосбережение"
+      ],
+      "command": "sudo cpupower frequency-set -g powersave",
+      "response": "Включаю энергосбережение.",
+      "speak_output": false,
+      "description": "Переключить CPU в режим энергосбережения.",
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "current_governor",
+      "phrases": [
+        "какой сейчас режим процессора",
+        "текущий режим питания",
+        "какой сейчас governor"
+      ],
+      "command": "bash $HOME/jarvis/scripts/governor.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Текущий режим CPU governor. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "earlyoom_status",
+      "phrases": [
+        "работает ли earlyoom",
+        "статус earlyoom",
+        "жив ли earlyoom"
+      ],
+      "command": "systemctl is-active earlyoom 2>/dev/null || echo 'не найден'",
+      "response": "Статус earlyoom:",
+      "speak_output": true,
+      "description": "Работает ли earlyoom. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "minimize_window",
+      "phrases": [
+        "сверни окно",
+        "сверни это окно"
+      ],
+      "command": "xdotool getactivewindow windowminimize",
+      "response": "Сворачиваю.",
+      "speak_output": false,
+      "description": "Свернуть активное окно.",
+      "tags": [
+        "window"
+      ]
+    },
+    {
+      "id": "maximize_window",
+      "phrases": [
+        "разверни окно",
+        "на весь экран",
+        "разверни на весь экран"
+      ],
+      "command": "wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz",
+      "response": "Разворачиваю.",
+      "speak_output": false,
+      "description": "Развернуть активное окно на весь экран.",
+      "tags": [
+        "window"
+      ]
+    },
+    {
+      "id": "list_windows",
+      "phrases": [
+        "какие окна открыты",
+        "покажи окна",
+        "сколько окон открыто"
+      ],
+      "command": "wmctrl -l 2>/dev/null | wc -l",
+      "response": "Открытых окон:",
+      "speak_output": true,
+      "description": "Сколько окон открыто. Говорит вслух.",
+      "tags": [
+        "info",
+        "window"
+      ]
+    },
+    {
+      "id": "next_workspace",
+      "phrases": [
+        "следующий рабочий стол",
+        "следующее рабочее пространство"
+      ],
+      "command": "xdotool set_desktop --relative -- 1",
+      "response": "Переключаю.",
+      "speak_output": false,
+      "description": "Переключиться на следующий рабочий стол XFCE.",
+      "tags": [
+        "window"
+      ]
+    },
+    {
+      "id": "prev_workspace",
+      "phrases": [
+        "предыдущий рабочий стол",
+        "предыдущее рабочее пространство"
+      ],
+      "command": "xdotool set_desktop --relative -- -1",
+      "response": "Переключаю.",
+      "speak_output": false,
+      "description": "Переключиться на предыдущий рабочий стол XFCE.",
+      "tags": [
+        "window"
+      ]
+    },
+    {
+      "id": "read_clipboard",
+      "phrases": [
+        "что в буфере обмена",
+        "прочитай буфер",
+        "что скопировано"
+      ],
+      "command": "bash $HOME/jarvis/scripts/clipboard.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Что сейчас в буфере обмена. Говорит вслух.",
+      "tags": [
+        "info"
+      ]
+    },
+    {
+      "id": "show_dns",
+      "phrases": [
+        "какой днс",
+        "покажи днс"
+      ],
+      "command": "bash $HOME/jarvis/scripts/dns.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Какой DNS используется. Говорит вслух.",
+      "tags": [
+        "info",
+        "network"
+      ]
+    },
+    {
+      "id": "list_wifi_networks",
+      "phrases": [
+        "покажи сети вайфай",
+        "сколько сетей вайфай видно"
+      ],
+      "command": "nmcli dev wifi list 2>/dev/null | tail -n +2 | wc -l",
+      "response": "Видно сетей вайфай:",
+      "speak_output": true,
+      "description": "Сколько Wi-Fi сетей видно. Говорит вслух.",
+      "tags": [
+        "info",
+        "network"
+      ]
+    },
+    {
+      "id": "restart_panel",
+      "phrases": [
+        "перезапусти панель"
+      ],
+      "command": "xfce4-panel -r",
+      "response": "Перезапускаю панель.",
+      "speak_output": false,
+      "description": "Перезапустить панель XFCE.",
+      "tags": [
+        "system",
+        "window"
+      ]
+    },
+    {
+      "id": "restart_compositor",
+      "phrases": [
+        "перезапусти композитор",
+        "перезапусти эффекты окон"
+      ],
+      "command": "xfwm4 --replace",
+      "response": "Перезапускаю композитор.",
+      "speak_output": false,
+      "background": true,
+      "description": "Перезапустить оконный композитор xfwm4 в фоне.",
+      "tags": [
+        "system",
+        "window"
+      ]
+    },
+    {
+      "id": "how_are_you",
+      "phrases": [
+        "как дела",
+        "как настроение",
+        "как ты"
+      ],
+      "command": "true",
+      "response": "Работаю в штатном режиме, готов к командам.",
+      "speak_output": false,
+      "description": "Ответить на вопрос «как дела». Без действий, только голос.",
+      "tags": [
+        "meta"
+      ]
+    },
+    {
+      "id": "what_can_you_do",
+      "phrases": [
+        "что ты умеешь",
+        "какие у тебя команды",
+        "что умеешь"
+      ],
+      "command": "true",
+      "response": "Слушаю голосовые команды из белого списка: статус системы, сеть, питание, окна и так далее. Полный список в commands.json.",
+      "speak_output": false,
+      "description": "Перечислить, что умеет Jarvis. Просто отвечает голосом без действий.",
+      "tags": [
+        "meta"
+      ]
+    },
+    {
+      "id": "fan_speed",
+      "phrases": [
+        "скорость вентилятора",
+        "обороты вентилятора",
+        "как крутится вентилятор"
+      ],
+      "command": "bash $HOME/jarvis/scripts/fanspeed.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Скорость вращения вентиляторов. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "news",
+      "phrases": [
+        "какие новости",
+        "расскажи новости",
+        "что нового в мире",
+        "новости"
+      ],
+      "command": "bash $HOME/jarvis/scripts/news.sh",
+      "response": "",
+      "speak_output": true,
+      "timeout": 25,
+      "description": "Получить краткую сводку новостей. Говорит вслух.",
+      "tags": [
+        "info",
+        "media"
+      ]
+    },
+    {
+      "id": "open_code_editor",
+      "phrases": [
+        "открой редактор кода",
+        "запусти редактор",
+        "открой код"
+      ],
+      "command": "code &",
+      "response": "Открываю редактор кода.",
+      "speak_output": false,
+      "description": "Открыть VS Code.",
+      "tags": [
+        "app",
+        "dev"
+      ]
+    },
+    {
+      "id": "open_text_editor",
+      "phrases": [
+        "открой текстовый редактор",
+        "открой блокнот",
+        "запусти текстовый редактор"
+      ],
+      "command": "mousepad &",
+      "response": "Открываю текстовый редактор.",
+      "speak_output": false,
+      "description": "Открыть текстовый редактор Mousepad.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "open_downloads",
+      "phrases": [
+        "открой загрузки",
+        "покажи загрузки",
+        "открой папку загрузок"
+      ],
+      "command": "thunar \"$HOME/Downloads\" &",
+      "response": "Открываю загрузки.",
+      "speak_output": false,
+      "description": "Открыть папку ~/Downloads в Thunar.",
+      "tags": [
+        "app",
+        "files"
+      ]
+    },
+    {
+      "id": "open_home",
+      "phrases": [
+        "открой домашнюю папку",
+        "открой домашний каталог"
+      ],
+      "command": "thunar \"$HOME\" &",
+      "response": "Открываю домашнюю папку.",
+      "speak_output": false,
+      "description": "Открыть домашнюю папку в Thunar.",
+      "tags": [
+        "app",
+        "files"
+      ]
+    },
+    {
+      "id": "memory_usage",
+      "phrases": [
+        "сколько памяти используется",
+        "использование памяти",
+        "статус памяти"
+      ],
+      "command": "bash $HOME/jarvis/scripts/meminfo.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Использование оперативной памяти. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "system_uptime",
+      "phrases": [
+        "сколько работает система",
+        "время работы системы",
+        "аптайм"
+      ],
+      "command": "uptime -p | sed 's/up /Система работает /'",
+      "response": "",
+      "speak_output": true,
+      "description": "Сколько работает система (uptime). Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "disk_io",
+      "phrases": [
+        "активность диска",
+        "нагрузка на диск",
+        "статус дисков"
+      ],
+      "command": "bash $HOME/jarvis/scripts/diskio.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Активность дисков. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "kill_process",
+      "phrases": [
+        "убей firefox",
+        "закрой firefox"
+      ],
+      "command": "pkill -9 firefox",
+      "response": "Завершаю Firefox.",
+      "speak_output": false,
+      "description": "Завершить все процессы Firefox (pkill -9 firefox).",
+      "tags": [
+        "window"
+      ]
+    },
+    {
+      "id": "screenshot_selection",
+      "phrases": [
+        "сделай скриншот области",
+        "выделенный скриншот"
+      ],
+      "command": "xfce4-screenshooter -r -s \"$HOME/Pictures\"",
+      "response": "Выбери область для снимка.",
+      "speak_output": false,
+      "description": "Снимок выделенной области экрана в Pictures.",
+      "tags": [
+        "screen",
+        "media"
+      ]
+    },
+    {
+      "id": "weather",
+      "phrases": [
+        "какая погода",
+        "прогноз погоды",
+        "погода на улице"
+      ],
+      "command": "bash $HOME/jarvis/scripts/weather.sh",
+      "response": "",
+      "speak_output": true,
+      "timeout": 15,
+      "description": "Текущая погода. Говорит вслух.",
+      "tags": [
+        "info"
+      ]
+    },
+    {
+      "id": "calendar",
+      "phrases": [
+        "какое сегодня число",
+        "покажи календарь",
+        "какой день"
+      ],
+      "command": "date '+Сегодня %d %B %Y года, %A.'",
+      "response": "",
+      "speak_output": true,
+      "description": "Какое сегодня число и день недели. Говорит вслух.",
+      "tags": [
+        "info"
+      ]
+    },
+    {
+      "id": "find_large_files",
+      "phrases": [
+        "найди большие файлы",
+        "покажи большие файлы в домашней папке"
+      ],
+      "command": "bash $HOME/jarvis/scripts/largefiles.sh",
+      "response": "",
+      "speak_output": true,
+      "timeout": 30,
+      "description": "Найти большие файлы в домашней папке. Говорит вслух.",
+      "tags": [
+        "info",
+        "files"
+      ]
+    },
+    {
+      "id": "clipboard_history",
+      "phrases": [
+        "история буфера обмена",
+        "что было в буфере"
+      ],
+      "command": "xfce4-clipman-history",
+      "response": "Открываю историю буфера обмена.",
+      "speak_output": false,
+      "description": "Открыть историю буфера обмена xfce4-clipman.",
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "toggle_notifications",
+      "phrases": [
+        "выключи уведомления",
+        "включи уведомления",
+        "переключи уведомления"
+      ],
+      "command": "bash $HOME/jarvis/scripts/toggle_notifications.sh",
+      "response": "",
+      "speak_output": true,
+      "description": "Переключить уведомления.",
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "screen_recording_start",
+      "phrases": [
+        "начни запись экрана",
+        "запиши экран"
+      ],
+      "command": "simplescreenrecorder &",
+      "response": "Запускаю запись экрана.",
+      "speak_output": false,
+      "description": "Запустить запись экрана через SimpleScreenRecorder.",
+      "tags": [
+        "media",
+        "screen"
+      ]
+    },
+    {
+      "id": "open_calculator",
+      "phrases": [
+        "открой калькулятор",
+        "запусти калькулятор"
+      ],
+      "command": "galculator ",
+      "response": "Открываю калькулятор.",
+      "speak_output": false,
+      "description": "Открыть калькулятор galculator.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "open_discord",
+      "phrases": [
+        "открой дискорд",
+        "запусти дискорд",
+        "открой discord"
+      ],
+      "command": "Discord",
+      "response": "Открываю Discord.",
+      "speak_output": false,
+      "description": "Открыть Discord.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "discord_call_fen",
+      "phrases": [
+        "позвони фену",
+        "звони фену",
+        "позвони фену в дискорде",
+        "вызови фена"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_call_fen.sh",
+      "response": "Звоню Фену в Discord.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "open_telegram",
+      "phrases": [
+        "открой телеграм",
+        "запусти телеграм"
+      ],
+      "command": "telegram-desktop &",
+      "response": "Открываю Telegram.",
+      "speak_output": false,
+      "description": "Открыть Telegram.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "open_spotify",
+      "phrases": [
+        "открой спотифай",
+        "запусти spotify",
+        "открой музыку"
+      ],
+      "command": "spotify &",
+      "response": "Открываю Spotify.",
+      "speak_output": false,
+      "description": "Открыть Spotify.",
+      "tags": [
+        "app",
+        "media"
+      ]
+    },
+    {
+      "id": "open_steam",
+      "phrases": [
+        "открой стим",
+        "запусти steam"
+      ],
+      "command": "steam &",
+      "response": "Открываю Steam.",
+      "speak_output": false,
+      "description": "Открыть Steam.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "open_obs",
+      "phrases": [
+        "открой obs",
+        "запусти obs"
+      ],
+      "command": "obs &",
+      "response": "Открываю OBS.",
+      "speak_output": false,
+      "description": "Открыть OBS Studio.",
+      "tags": [
+        "app",
+        "media"
+      ]
+    },
+    {
+      "id": "open_gimp",
+      "phrases": [
+        "открой гимп",
+        "запусти gimp",
+        "открой фоторедактор"
+      ],
+      "command": "gimp &",
+      "response": "Открываю GIMP.",
+      "speak_output": false,
+      "description": "Открыть GIMP.",
+      "tags": [
+        "app",
+        "media"
+      ]
+    },
+    {
+      "id": "open_inkscape",
+      "phrases": [
+        "открой инкскейп",
+        "запусти inkscape",
+        "векторный редактор"
+      ],
+      "command": "inkscape &",
+      "response": "Открываю Inkscape.",
+      "speak_output": false,
+      "description": "Открыть Inkscape.",
+      "tags": [
+        "app",
+        "media"
+      ]
+    },
+    {
+      "id": "open_blender",
+      "phrases": [
+        "открой блендер",
+        "запусти blender"
+      ],
+      "command": "blender &",
+      "response": "Открываю Blender.",
+      "speak_output": false,
+      "description": "Открыть Blender.",
+      "tags": [
+        "app",
+        "media"
+      ]
+    },
+    {
+      "id": "open_vlc",
+      "phrases": [
+        "открой влц",
+        "запусти vlc",
+        "открой видеоплеер"
+      ],
+      "command": "vlc &",
+      "response": "Открываю VLC.",
+      "speak_output": false,
+      "description": "Открыть VLC.",
+      "tags": [
+        "app",
+        "media"
+      ]
+    },
+    {
+      "id": "open_audacity",
+      "phrases": [
+        "открой аудасити",
+        "запусти audacity",
+        "аудиоредактор"
+      ],
+      "command": "audacity &",
+      "response": "Открываю Audacity.",
+      "speak_output": false,
+      "description": "Открыть Audacity.",
+      "tags": [
+        "app",
+        "media"
+      ]
+    },
+    {
+      "id": "open_htop",
+      "phrases": [
+        "открой htop",
+        "запусти диспетчер задач",
+        "покажи процессы в htop"
+      ],
+      "command": "xfce4-terminal -e htop &",
+      "response": "Открываю htop.",
+      "speak_output": false,
+      "description": "Открыть htop в новом терминале.",
+      "tags": [
+        "app",
+        "system"
+      ]
+    },
+    {
+      "id": "open_system_monitor",
+      "phrases": [
+        "открой монитор системы",
+        "системный монитор"
+      ],
+      "command": "xfce4-taskmanager &",
+      "response": "Открываю монитор системы.",
+      "speak_output": false,
+      "description": "Открыть XFCE Task Manager.",
+      "tags": [
+        "app",
+        "system"
+      ]
+    },
+    {
+      "id": "open_settings",
+      "phrases": [
+        "открой настройки",
+        "параметры системы"
+      ],
+      "command": "xfce4-settings-manager &",
+      "response": "Открываю настройки.",
+      "speak_output": false,
+      "description": "Открыть XFCE Settings Manager.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "open_youtube",
+      "phrases": [
+        "открой ютуб",
+        "открой youtube"
+      ],
+      "command": "firefox https://youtube.com &",
+      "response": "Открываю YouTube.",
+      "speak_output": false,
+      "description": "Открыть YouTube в Firefox.",
+      "tags": [
+        "app",
+        "browser",
+        "media"
+      ]
+    },
+    {
+      "id": "open_github",
+      "phrases": [
+        "открой гитхаб",
+        "открой github"
+      ],
+      "command": "firefox https://github.com &",
+      "response": "Открываю GitHub.",
+      "speak_output": false,
+      "description": "Открыть GitHub в Firefox.",
+      "tags": [
+        "app",
+        "browser",
+        "dev"
+      ]
+    },
+    {
+      "id": "open_chatgpt",
+      "phrases": [
+        "открой чатгпт",
+        "открой chatgpt"
+      ],
+      "command": "firefox https://chat.openai.com &",
+      "response": "Открываю ChatGPT.",
+      "speak_output": false,
+      "description": "Открыть ChatGPT в Firefox.",
+      "tags": [
+        "app",
+        "browser",
+        "dev"
+      ]
+    },
+    {
+      "id": "open_gmail",
+      "phrases": [
+        "открой почту",
+        "открой gmail",
+        "проверь почту"
+      ],
+      "command": "firefox https://mail.google.com &",
+      "response": "Открываю почту.",
+      "speak_output": false,
+      "description": "Открыть Gmail в Firefox.",
+      "tags": [
+        "app",
+        "browser"
+      ]
+    },
+    {
+      "id": "search_google",
+      "phrases": [
+        "гугли",
+        "поиск в гугле",
+        "открой гугл"
+      ],
+      "command": "firefox https://google.com &",
+      "response": "Открываю Google.",
+      "speak_output": false,
+      "description": "Открыть Google в Firefox.",
+      "tags": [
+        "browser"
+      ]
+    },
+    {
+      "id": "open_reddit",
+      "phrases": [
+        "открой реддит",
+        "открой reddit"
+      ],
+      "command": "firefox https://reddit.com &",
+      "response": "Открываю Reddit.",
+      "speak_output": false,
+      "description": "Открыть Reddit в Firefox.",
+      "tags": [
+        "app",
+        "browser"
+      ]
+    },
+    {
+      "id": "open_twitter",
+      "phrases": [
+        "открой твиттер",
+        "открой twitter",
+        "открой x"
+      ],
+      "command": "firefox https://x.com &",
+      "response": "Открываю Twitter.",
+      "speak_output": false,
+      "description": "Открыть X (Twitter) в Firefox.",
+      "tags": [
+        "app",
+        "browser"
+      ]
+    },
+    {
+      "id": "open_twitch",
+      "phrases": [
+        "открой твич",
+        "открой twitch"
+      ],
+      "command": "firefox https://twitch.tv &",
+      "response": "Открываю Twitch.",
+      "speak_output": false,
+      "description": "Открыть Twitch в Firefox.",
+      "tags": [
+        "app",
+        "browser",
+        "media"
+      ]
+    },
+    {
+      "id": "close_discord",
+      "phrases": [
+        "закрой дискорд",
+        "выключи discord"
+      ],
+      "command": "pkill -9 discord",
+      "response": "Закрываю Discord.",
+      "speak_output": false,
+      "description": "Закрыть Discord (pkill -9).",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "close_telegram",
+      "phrases": [
+        "закрой телеграм",
+        "выключи telegram"
+      ],
+      "command": "pkill -9 telegram",
+      "response": "Закрываю Telegram.",
+      "speak_output": false,
+      "description": "Закрыть Telegram (pkill -9).",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "close_spotify",
+      "phrases": [
+        "закрой спотифай",
+        "выключи spotify"
+      ],
+      "command": "pkill -9 spotify",
+      "response": "Закрываю Spotify.",
+      "speak_output": false,
+      "description": "Закрыть Spotify (pkill -9).",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "close_steam",
+      "phrases": [
+        "закрой стим",
+        "выключи steam"
+      ],
+      "command": "pkill -9 steam",
+      "response": "Закрываю Steam.",
+      "speak_output": false,
+      "description": "Закрыть Steam (pkill -9).",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "mute_discord",
+      "phrases": [
+        "замьють в дискорде",
+        "отключи микрофон в дискорде",
+        "замьють дискорд"
+      ],
+      "command": "xdotool search --name 'Discord' key --clearmodifiers ctrl+shift+m",
+      "response": "Переключаю микрофон в Discord.",
+      "speak_output": false,
+      "description": "Переключить микрофон в Discord.",
+      "tags": [
+        "app",
+        "audio"
+      ]
+    },
+    {
+      "id": "deafen_discord",
+      "phrases": [
+        "оглуши в дискорде",
+        "отключи звук в дискорде",
+        "дефен дискорд"
+      ],
+      "command": "xdotool search --name 'Discord' key --clearmodifiers ctrl+shift+d",
+      "response": "Переключаю звук в Discord.",
+      "speak_output": false,
+      "description": "Переключить звук в Discord.",
+      "tags": [
+        "app",
+        "audio"
+      ]
+    },
+    {
+      "id": "open_notion",
+      "phrases": [
+        "открой ноушн",
+        "запусти notion"
+      ],
+      "command": "firefox https://notion.so &",
+      "response": "Открываю Notion.",
+      "speak_output": false,
+      "description": "Открыть Notion в Firefox.",
+      "tags": [
+        "app",
+        "browser"
+      ]
+    },
+    {
+      "id": "open_trello",
+      "phrases": [
+        "открой трелло",
+        "запусти trello"
+      ],
+      "command": "firefox https://trello.com &",
+      "response": "Открываю Trello.",
+      "speak_output": false,
+      "description": "Открыть Trello в Firefox.",
+      "tags": [
+        "app",
+        "browser"
+      ]
+    },
+    {
+      "id": "open_slack",
+      "phrases": [
+        "открой слак",
+        "запусти slack"
+      ],
+      "command": "slack &",
+      "response": "Открываю Slack.",
+      "speak_output": false,
+      "description": "Открыть Slack.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "open_zoom",
+      "phrases": [
+        "открой зум",
+        "запусти zoom"
+      ],
+      "command": "zoom &",
+      "response": "Открываю Zoom.",
+      "speak_output": false,
+      "description": "Открыть Zoom.",
+      "tags": [
+        "app"
+      ]
+    },
+    {
+      "id": "screenshot_window",
+      "phrases": [
+        "сделай скриншот окна",
+        "сними активное окно"
+      ],
+      "command": "xfce4-screenshooter -w -s \"$HOME/Pictures\"",
+      "response": "Снимаю активное окно.",
+      "speak_output": false,
+      "description": "Снимок активного окна в Pictures.",
+      "tags": [
+        "screen",
+        "media"
+      ]
+    },
+    {
+      "id": "record_microphone",
+      "phrases": [
+        "запиши с микрофона",
+        "начни запись микрофона"
+      ],
+      "command": "parecord --rate=44100 --channels=1 --format=s16le \"$HOME/recording_$(date +%Y%m%d_%H%M%S).wav\" &",
+      "response": "Записываю с микрофона. Скажи стоп запись микрофона для остановки.",
+      "speak_output": false,
+      "description": "Начать запись с микрофона в фоне (parecord).",
+      "tags": [
+        "media"
+      ]
+    },
+    {
+      "id": "stop_recording",
+      "phrases": [
+        "стоп запись микрофона",
+        "останови запись"
+      ],
+      "command": "pkill -SIGINT parecord",
+      "response": "Запись остановлена.",
+      "speak_output": false,
+      "description": "Остановить запись с микрофона.",
+      "tags": [
+        "media"
+      ]
+    },
+    {
+      "id": "list_installed_packages",
+      "phrases": [
+        "сколько пакетов установлено",
+        "количество пакетов"
+      ],
+      "command": "pacman -Q | wc -l",
+      "response": "Установлено пакетов:",
+      "speak_output": true,
+      "description": "Сколько пакетов установлено. Говорит вслух.",
+      "tags": [
+        "info",
+        "package"
+      ]
+    },
+    {
+      "id": "check_webcam",
+      "phrases": [
+        "проверь веб камеру",
+        "работает ли камера"
+      ],
+      "command": "mpv av://v4l2:/dev/video0 &",
+      "response": "Включаю веб-камеру.",
+      "speak_output": false,
+      "description": "Открыть превью веб-камеры через mpv.",
+      "tags": [
+        "media"
+      ]
+    },
+    {
+      "id": "night_light_on",
+      "phrases": [
+        "включи ночной режим",
+        "включи фильтр синего"
+      ],
+      "command": "redshift -O 3500K &",
+      "response": "Включаю ночной режим.",
+      "speak_output": false,
+      "description": "Включить ночной режим redshift 3500K.",
+      "tags": [
+        "screen"
+      ]
+    },
+    {
+      "id": "night_light_off",
+      "phrases": [
+        "выключи ночной режим",
+        "выключи фильтр синего"
+      ],
+      "command": "pkill redshift && redshift -x",
+      "response": "Выключаю ночной режим.",
+      "speak_output": false,
+      "description": "Выключить ночной режим redshift.",
+      "tags": [
+        "screen"
+      ]
+    },
+    {
+      "id": "toggle_touchpad",
+      "phrases": [
+        "переключи тачпад",
+        "включи тачпад",
+        "выключи тачпад"
+      ],
+      "command": "xinput list | grep -i touchpad | grep -oP 'id=\\K\\d+' | xargs -I {} sh -c 'xinput list-props {} | grep -q \"Device Enabled.*1$\" && xinput disable {} || xinput enable {}'",
+      "response": "Переключаю тачпад.",
+      "speak_output": false,
+      "description": "Включить/выключить тачпад.",
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "enable_microphone",
+      "phrases": [
+        "включи микрофон",
+        "размьють микрофон"
+      ],
+      "command": "pactl set-source-mute @DEFAULT_SOURCE@ 0",
+      "response": "Микрофон включён.",
+      "speak_output": false,
+      "description": "Размьютить системный микрофон.",
+      "tags": [
+        "audio"
+      ]
+    },
+    {
+      "id": "disable_microphone",
+      "phrases": [
+        "выключи микрофон",
+        "замьють микрофон"
+      ],
+      "command": "pactl set-source-mute @DEFAULT_SOURCE@ 1",
+      "response": "Микрофон выключен.",
+      "speak_output": false,
+      "description": "Замьютить системный микрофон.",
+      "tags": [
+        "audio"
+      ]
+    },
+    {
+      "id": "check_battery_health",
+      "phrases": [
+        "здоровье батареи",
+        "состояние батареи"
+      ],
+      "command": "upower -i /org/freedesktop/UPower/devices/battery_BAT0 | grep -E 'capacity|health' | sed 's/^[[:space:]]*//'",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "open_maps",
+      "phrases": [
+        "открой карты",
+        "открой гугл карты"
+      ],
+      "command": "firefox https://maps.google.com &",
+      "response": "Открываю Google Maps.",
+      "speak_output": false,
+      "description": "Открыть Google Maps в Firefox.",
+      "tags": [
+        "app",
+        "browser"
+      ]
+    },
+    {
+      "id": "open_drive",
+      "phrases": [
+        "открой гугл диск",
+        "открой google drive"
+      ],
+      "command": "firefox https://drive.google.com &",
+      "response": "Открываю Google Drive.",
+      "speak_output": false,
+      "description": "Открыть Google Drive в Firefox.",
+      "tags": [
+        "app",
+        "browser"
+      ]
+    },
+    {
+      "id": "clipboard_to_qr",
+      "phrases": [
+        "сделай кюар код из буфера",
+        "создай qr код"
+      ],
+      "command": "xclip -selection clipboard -o | qrencode -o \"$HOME/Pictures/qr_$(date +%Y%m%d_%H%M%S).png\" && notify-send 'QR-код сохранён в Pictures'",
+      "response": "Создаю QR-код из буфера обмена.",
+      "speak_output": false,
+      "description": "Создать QR-код из текущего содержимого буфера.",
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "cpu_usage",
+      "phrases": [
+        "загрузка процессора",
+        "нагрузка на процессор"
+      ],
+      "command": "top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\\([0-9.]*\\)%* id.*/\\1/' | awk '{print \"Загрузка процессора \" 100 - $1 \" процентов\"}'",
+      "response": "",
+      "speak_output": true,
+      "description": "Текущая загрузка CPU в процентах. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "list_usb_devices",
+      "phrases": [
+        "покажи юсб устройства",
+        "какие usb подключены"
+      ],
+      "command": "lsusb | wc -l",
+      "response": "Подключено USB устройств:",
+      "speak_output": true,
+      "description": "Сколько USB-устройств подключено. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "check_vpn_status",
+      "phrases": [
+        "статус впн",
+        "подключен ли vpn"
+      ],
+      "command": "ip a | grep -q tun0 && echo 'VPN подключен' || echo 'VPN не подключен'",
+      "response": "",
+      "speak_output": true,
+      "description": "Подключен ли VPN (tun0). Говорит вслух.",
+      "tags": [
+        "info",
+        "network"
+      ]
+    },
+    {
+      "id": "restart_audio",
+      "phrases": [
+        "перезапусти звук",
+        "перезагрузи pulseaudio"
+      ],
+      "command": "pulseaudio -k && pulseaudio --start",
+      "response": "Перезапускаю аудио систему.",
+      "speak_output": false,
+      "description": "Перезапустить PulseAudio/PipeWire.",
+      "tags": [
+        "system",
+        "audio"
+      ]
+    },
+    {
+      "id": "toggle_compositor",
+      "phrases": [
+        "переключи композитор",
+        "включи композитор",
+        "выключи композитор"
+      ],
+      "command": "xfconf-query -c xfwm4 -p /general/use_compositing -T",
+      "response": "Переключаю композитор.",
+      "speak_output": false,
+      "description": "Переключить композитор XFWM4.",
+      "tags": [
+        "screen"
+      ]
+    },
+    {
+      "id": "focus_mode",
+      "phrases": [
+        "режим фокуса",
+        "включи режим работы"
+      ],
+      "command": "pkill -9 discord; pkill -9 telegram; pkill -9 spotify; notify-send 'Режим фокуса' 'Отвлекающие приложения закрыты'",
+      "response": "Активирую режим фокуса. Discord, Telegram и Spotify закрыты.",
+      "speak_output": false,
+      "description": "Закрыть отвлекающие приложения (Discord, Telegram, Spotify).",
+      "tags": [
+        "focus"
+      ]
+    },
+    {
+      "id": "show_gpu_info",
+      "phrases": [
+        "информация о видеокарте",
+        "покажи видеокарту",
+        "какая видюха"
+      ],
+      "command": "lspci | grep -i vga | cut -d ':' -f3",
+      "response": "Видеокарта:",
+      "speak_output": true,
+      "description": "Модель видеокарты (lspci). Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "gpu_usage",
+      "phrases": [
+        "загрузка видеокарты",
+        "нагрузка на gpu"
+      ],
+      "command": "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null || echo 'nvidia-smi не найдена'",
+      "response": "Загрузка GPU:",
+      "speak_output": true,
+      "description": "Загрузка GPU через nvidia-smi. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "gpu_temperature",
+      "phrases": [
+        "температура видеокарты",
+        "сколько градусов gpu"
+      ],
+      "command": "nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader 2>/dev/null || echo 'nvidia-smi не найдена'",
+      "response": "Температура GPU:",
+      "speak_output": true,
+      "description": "Температура GPU через nvidia-smi. Говорит вслух.",
+      "tags": [
+        "info",
+        "system"
+      ]
+    },
+    {
+      "id": "list_audio_devices",
+      "phrases": [
+        "покажи аудио устройства",
+        "список звуковых устройств"
+      ],
+      "command": "pactl list sinks short | wc -l",
+      "response": "Аудио устройств:",
+      "speak_output": true,
+      "description": "Количество звуковых устройств. Говорит вслух.",
+      "tags": [
+        "info",
+        "audio"
+      ]
+    },
+    {
+      "id": "test_speakers",
+      "phrases": [
+        "тест колонок",
+        "проверь звук"
+      ],
+      "command": "speaker-test -t sine -f 1000 -l 1",
+      "response": "Проверяю колонки.",
+      "speak_output": false,
+      "timeout": 5,
+      "description": "Тест колонок (speaker-test sine).",
+      "tags": [
+        "audio"
+      ]
+    },
+    {
+      "id": "list_monitors",
+      "phrases": [
+        "покажи мониторы",
+        "сколько экранов"
+      ],
+      "command": "xrandr --listmonitors | grep -c 'Monitor'",
+      "response": "Подключено мониторов:",
+      "speak_output": true,
+      "description": "Сколько мониторов подключено. Говорит вслух.",
+      "tags": [
+        "info",
+        "screen"
+      ]
+    },
+    {
+      "id": "screen_resolution",
+      "phrases": [
+        "разрешение экрана",
+        "какое разрешение"
+      ],
+      "command": "xdpyinfo | awk '/dimensions/{print $2}'",
+      "response": "Разрешение экрана:",
+      "speak_output": true
+    },
+    {
+      "id": "show_hostname",
+      "phrases": [
+        "какое имя компьютера",
+        "покажи hostname"
+      ],
+      "command": "hostname",
+      "response": "Имя компьютера:",
+      "speak_output": true
+    },
+    {
+      "id": "show_username",
+      "phrases": [
+        "под каким пользователем работаю",
+        "какой юзер"
+      ],
+      "command": "whoami",
+      "response": "Текущий пользователь:",
+      "speak_output": true
+    },
+    {
+      "id": "copy_ip_to_clipboard",
+      "phrases": [
+        "скопируй айпи в буфер",
+        "айпи в буфер обмена"
+      ],
+      "command": "hostname -I | awk '{print $1}' | xclip -selection clipboard",
+      "response": "IP адрес скопирован в буфер обмена.",
+      "speak_output": false
+    },
+    {
+      "id": "ping_gateway",
+      "phrases": [
+        "пингани шлюз",
+        "проверь связь с роутером"
+      ],
+      "command": "ping -c 2 -W 1 $(ip route | grep default | awk '{print $3}') >/dev/null 2>&1 && echo 'Связь с роутером есть' || echo 'Роутер не отвечает'",
+      "response": "",
+      "speak_output": true,
+      "timeout": 5
+    },
+    {
+      "id": "ping_google",
+      "phrases": [
+        "пингани гугл",
+        "проверь связь с гуглом"
+      ],
+      "command": "ping -c 2 -W 1 8.8.8.8 >/dev/null 2>&1 && echo 'Связь с Google есть' || echo 'Google не отвечает'",
+      "response": "",
+      "speak_output": true,
+      "timeout": 5
+    },
+    {
+      "id": "show_gateway",
+      "phrases": [
+        "какой шлюз",
+        "покажи gateway"
+      ],
+      "command": "ip route | grep default | awk '{print $3}'",
+      "response": "Шлюз:",
+      "speak_output": true
+    },
+    {
+      "id": "show_public_ip",
+      "phrases": [
+        "какой внешний айпи",
+        "мой публичный адрес"
+      ],
+      "command": "curl -s ifconfig.me 2>/dev/null || echo 'Не удалось получить'",
+      "response": "Внешний IP:",
+      "speak_output": true,
+      "timeout": 10
+    },
+    {
+      "id": "speed_test",
+      "phrases": [
+        "тест скорости интернета",
+        "спидтест"
+      ],
+      "command": "speedtest-cli --simple 2>/dev/null || echo 'speedtest-cli не установлен'",
+      "response": "Запускаю тест скорости.",
+      "speak_output": true,
+      "timeout": 40
+    },
+    {
+      "id": "kill_process_by_port",
+      "phrases": [
+        "убей процесс на порту восемь тысяч",
+        "освободи порт восемь тысяч"
+      ],
+      "command": "fuser -k 8000/tcp 2>/dev/null || echo 'Порт свободен'",
+      "response": "Освобождаю порт 8000.",
+      "speak_output": false
+    },
+    {
+      "id": "list_systemd_timers",
+      "phrases": [
+        "покажи таймеры",
+        "активные таймеры системы"
+      ],
+      "command": "systemctl list-timers --no-pager | head -5 | tail -3",
+      "response": "Ближайшие таймеры:",
+      "speak_output": true
+    },
+    {
+      "id": "journal_size",
+      "phrases": [
+        "размер журнала",
+        "сколько весит журнал"
+      ],
+      "command": "journalctl --disk-usage | awk '{print $7, $8}'",
+      "response": "Журнал занимает:",
+      "speak_output": true
+    },
+    {
+      "id": "clean_journal",
+      "phrases": [
+        "почисти журнал",
+        "очисти логи системы"
+      ],
+      "command": "sudo journalctl --vacuum-time=7d",
+      "response": "Чищу журнал старше 7 дней.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "count_files_in_home",
+      "phrases": [
+        "сколько файлов в домашней папке",
+        "количество файлов дома"
+      ],
+      "command": "find \"$HOME\" -type f 2>/dev/null | wc -l",
+      "response": "Файлов в домашней папке:",
+      "speak_output": true,
+      "timeout": 30
+    },
+    {
+      "id": "count_directories_in_home",
+      "phrases": [
+        "сколько папок в домашней папке",
+        "количество директорий дома"
+      ],
+      "command": "find \"$HOME\" -type d 2>/dev/null | wc -l",
+      "response": "Папок в домашней папке:",
+      "speak_output": true,
+      "timeout": 30
+    },
+    {
+      "id": "recent_downloads",
+      "phrases": [
+        "покажи последние загрузки",
+        "что скачалось недавно"
+      ],
+      "command": "ls -lt \"$HOME/Downloads\" | head -4 | tail -3 | awk '{print $9}'",
+      "response": "Последние загрузки:",
+      "speak_output": true
+    },
+    {
+      "id": "clean_downloads",
+      "phrases": [
+        "почисти загрузки",
+        "удали старые загрузки"
+      ],
+      "command": "find \"$HOME/Downloads\" -type f -mtime +30 -delete 2>/dev/null",
+      "response": "Удаляю файлы старше 30 дней из загрузок.",
+      "speak_output": false
+    },
+    {
+      "id": "archive_screenshots",
+      "phrases": [
+        "архивируй скриншоты",
+        "упакуй скриншоты"
+      ],
+      "command": "cd \"$HOME/Pictures\" && tar -czf screenshots_$(date +%Y%m%d).tar.gz Screenshot*.png 2>/dev/null && rm Screenshot*.png",
+      "response": "Архивирую скриншоты.",
+      "speak_output": false
+    },
+    {
+      "id": "list_running_services",
+      "phrases": [
+        "какие сервисы запущены",
+        "активные сервисы"
+      ],
+      "command": "systemctl list-units --type=service --state=running --no-pager | grep -c '.service'",
+      "response": "Запущено сервисов:",
+      "speak_output": true
+    },
+    {
+      "id": "git_status_all",
+      "phrases": [
+        "статус всех гит репозиториев",
+        "проверь все репозитории"
+      ],
+      "command": "bash $HOME/jarvis/scripts/gitstatusall.sh",
+      "response": "",
+      "speak_output": true,
+      "timeout": 30
+    },
+    {
+      "id": "npm_global_packages",
+      "phrases": [
+        "глобальные npm пакеты",
+        "что установлено в npm"
+      ],
+      "command": "npm list -g --depth=0 2>/dev/null | wc -l",
+      "response": "Глобальных npm пакетов:",
+      "speak_output": true
+    },
+    {
+      "id": "pip_list_packages",
+      "phrases": [
+        "список pip пакетов",
+        "что установлено в pip"
+      ],
+      "command": "pip list 2>/dev/null | wc -l",
+      "response": "Установлено pip пакетов:",
+      "speak_output": true
+    },
+    {
+      "id": "python_version",
+      "phrases": [
+        "версия питона",
+        "какой python"
+      ],
+      "command": "python --version 2>&1",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "node_version",
+      "phrases": [
+        "версия ноды",
+        "какой node"
+      ],
+      "command": "node --version 2>&1",
+      "response": "Node:",
+      "speak_output": true
+    },
+    {
+      "id": "git_version",
+      "phrases": [
+        "версия гита",
+        "какой git"
+      ],
+      "command": "git --version",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "docker_version",
+      "phrases": [
+        "версия докера",
+        "какой docker"
+      ],
+      "command": "docker --version 2>&1",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "check_ssh_keys",
+      "phrases": [
+        "есть ssh ключи",
+        "покажи ssh ключи"
+      ],
+      "command": "ls -1 \"$HOME/.ssh/\"*.pub 2>/dev/null | wc -l",
+      "response": "SSH ключей:",
+      "speak_output": true
+    },
+    {
+      "id": "start_ssh_agent",
+      "phrases": [
+        "запусти ssh агент",
+        "старт ssh agent"
+      ],
+      "command": "eval $(ssh-agent -s)",
+      "response": "SSH агент запущен.",
+      "speak_output": false
+    },
+    {
+      "id": "kill_zombie_processes",
+      "phrases": [
+        "убей зомби процессы",
+        "почисти зомби"
+      ],
+      "command": "ps aux | awk '$8==\"Z\" {print $2}' | xargs -r kill -9 2>/dev/null || echo 'Зомби не найдены'",
+      "response": "Чищу зомби процессы.",
+      "speak_output": false
+    },
+    {
+      "id": "show_load_average",
+      "phrases": [
+        "средняя нагрузка",
+        "лоад эвэридж"
+      ],
+      "command": "uptime | awk -F'load average:' '{print $2}'",
+      "response": "Средняя нагрузка:",
+      "speak_output": true
+    },
+    {
+      "id": "show_zombies_count",
+      "phrases": [
+        "сколько зомби процессов",
+        "количество зомби"
+      ],
+      "command": "ps aux | awk '$8==\"Z\"' | wc -l",
+      "response": "Зомби процессов:",
+      "speak_output": true
+    },
+    {
+      "id": "backup_home",
+      "phrases": [
+        "создай бекап домашней папки",
+        "сделай резервную копию"
+      ],
+      "command": "tar -czf \"$HOME/backup_home_$(date +%Y%m%d).tar.gz\" --exclude='$HOME/backup_*.tar.gz' -C \"$HOME\" . 2>/dev/null",
+      "response": "Создаю резервную копию в фоне.",
+      "done_message": "Резервная копия создана.",
+      "speak_output": false,
+      "background": true,
+      "timeout": 300
+    },
+    {
+      "id": "check_cron_jobs",
+      "phrases": [
+        "покажи крон задачи",
+        "какие задачи в cron"
+      ],
+      "command": "crontab -l 2>/dev/null | grep -v '^#' | wc -l",
+      "response": "Активных cron задач:",
+      "speak_output": true
+    },
+    {
+      "id": "list_open_files",
+      "phrases": [
+        "сколько открытых файлов",
+        "количество открытых файлов"
+      ],
+      "command": "lsof 2>/dev/null | wc -l",
+      "response": "Открытых файлов:",
+      "speak_output": true
+    },
+    {
+      "id": "check_disk_smart",
+      "phrases": [
+        "проверь смарт диска",
+        "здоровье диска"
+      ],
+      "command": "sudo smartctl -H /dev/sda 2>/dev/null | grep overall",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "show_mounted_drives",
+      "phrases": [
+        "покажи примонтированные диски",
+        "что примонтировано"
+      ],
+      "command": "mount | grep '^/dev/' | wc -l",
+      "response": "Примонтировано дисков:",
+      "speak_output": true
+    },
+    {
+      "id": "eject_cd",
+      "phrases": [
+        "открой сидиром",
+        "выдвинь диск"
+      ],
+      "command": "eject",
+      "response": "Открываю привод.",
+      "speak_output": false
+    },
+    {
+      "id": "close_cd",
+      "phrases": [
+        "закрой сидиром",
+        "задвинь диск"
+      ],
+      "command": "eject -t",
+      "response": "Закрываю привод.",
+      "speak_output": false
+    },
+    {
+      "id": "show_timezone",
+      "phrases": [
+        "какая временная зона",
+        "покажи timezone"
+      ],
+      "command": "timedatectl | grep 'Time zone' | awk '{print $3}'",
+      "response": "Часовой пояс:",
+      "speak_output": true
+    },
+    {
+      "id": "sync_time",
+      "phrases": [
+        "синхронизируй время",
+        "обнови время"
+      ],
+      "command": "sudo timedatectl set-ntp true",
+      "response": "Синхронизирую время.",
+      "speak_output": false
+    },
+    {
+      "id": "show_locale",
+      "phrases": [
+        "какая локаль",
+        "текущая локализация"
+      ],
+      "command": "locale | grep LANG= | cut -d= -f2",
+      "response": "Локаль:",
+      "speak_output": true
+    },
+    {
+      "id": "random_password",
+      "phrases": [
+        "сгенерируй пароль",
+        "создай случайный пароль"
+      ],
+      "command": "openssl rand -base64 16",
+      "response": "Случайный пароль:",
+      "speak_output": true
+    },
+    {
+      "id": "random_password_clipboard",
+      "phrases": [
+        "пароль в буфер",
+        "сгенерируй пароль в буфер"
+      ],
+      "command": "openssl rand -base64 16 | tr -d '\\n' | xclip -selection clipboard",
+      "response": "Пароль сгенерирован и скопирован в буфер обмена.",
+      "speak_output": false
+    },
+    {
+      "id": "show_systemd_boot_time",
+      "phrases": [
+        "время загрузки системы",
+        "как быстро загрузилась система"
+      ],
+      "command": "systemd-analyze time",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "show_slow_services",
+      "phrases": [
+        "медленные сервисы",
+        "какие сервисы долго грузятся"
+      ],
+      "command": "systemd-analyze blame | head -3",
+      "response": "Самые медленные сервисы:",
+      "speak_output": true
+    },
+    {
+      "id": "check_selinux",
+      "phrases": [
+        "статус selinux",
+        "включен ли selinux"
+      ],
+      "command": "getenforce 2>/dev/null || echo 'SELinux не установлен'",
+      "response": "SELinux:",
+      "speak_output": true
+    },
+    {
+      "id": "check_apparmor",
+      "phrases": [
+        "статус apparmor",
+        "работает ли apparmor"
+      ],
+      "command": "systemctl is-active apparmor 2>/dev/null || echo 'не найден'",
+      "response": "AppArmor:",
+      "speak_output": true
+    },
+    {
+      "id": "list_sudo_users",
+      "phrases": [
+        "кто в судоерс",
+        "какие пользователи с sudo"
+      ],
+      "command": "getent group sudo | cut -d: -f4",
+      "response": "Пользователи с sudo:",
+      "speak_output": true
+    },
+    {
+      "id": "last_login",
+      "phrases": [
+        "последний вход в систему",
+        "когда последний раз логинились"
+      ],
+      "command": "last -1 -w | head -1 | awk '{print $1, $5, $6, $7}'",
+      "response": "Последний вход:",
+      "speak_output": true
+    },
+    {
+      "id": "count_users",
+      "phrases": [
+        "сколько пользователей в системе",
+        "количество юзеров"
+      ],
+      "command": "cat /etc/passwd | grep -v nologin | grep -v false | wc -l",
+      "response": "Пользователей в системе:",
+      "speak_output": true
+    },
+    {
+      "id": "disk_write_test",
+      "phrases": [
+        "тест скорости записи диска",
+        "проверь скорость записи"
+      ],
+      "command": "dd if=/dev/zero of=/tmp/testfile bs=1M count=100 oflag=direct 2>&1 | tail -1",
+      "response": "Тестирую скорость записи.",
+      "speak_output": true,
+      "timeout": 15
+    },
+    {
+      "id": "disk_read_test",
+      "phrases": [
+        "тест скорости чтения диска",
+        "проверь скорость чтения"
+      ],
+      "command": "dd if=/tmp/testfile of=/dev/null bs=1M 2>&1 | tail -1",
+      "response": "Тестирую скорость чтения.",
+      "speak_output": true,
+      "timeout": 15
+    },
+    {
+      "id": "show_shell",
+      "phrases": [
+        "какой шелл",
+        "текущая оболочка"
+      ],
+      "command": "echo $SHELL",
+      "response": "Текущий shell:",
+      "speak_output": true
+    },
+    {
+      "id": "show_editor",
+      "phrases": [
+        "какой редактор по умолчанию",
+        "текущий эдитор"
+      ],
+      "command": "echo ${EDITOR:-не установлен}",
+      "response": "Редактор по умолчанию:",
+      "speak_output": true
+    },
+    {
+      "id": "flush_dns_cache",
+      "phrases": [
+        "сброс днс кэша",
+        "почисти кэш днс"
+      ],
+      "command": "sudo systemd-resolve --flush-caches 2>/dev/null || echo 'выполнено'",
+      "response": "DNS кэш очищен.",
+      "speak_output": false
+    },
+    {
+      "id": "show_routes",
+      "phrases": [
+        "таблица маршрутизации",
+        "покажи роуты"
+      ],
+      "command": "ip route | wc -l",
+      "response": "Маршрутов в таблице:",
+      "speak_output": true
+    },
+    {
+      "id": "copy_ssh_key",
+      "phrases": [
+        "скопируй ssh ключ в буфер",
+        "ssh ключ в буфер"
+      ],
+      "command": "cat \"$HOME/.ssh/id_rsa.pub\" 2>/dev/null | xclip -selection clipboard && echo 'готово' || echo 'ключ не найден'",
+      "response": "SSH ключ скопирован в буфер обмена.",
+      "speak_output": false
+    },
+    {
+      "id": "generate_ssh_key",
+      "phrases": [
+        "сгенерируй ssh ключ",
+        "создай ssh ключ"
+      ],
+      "command": "ssh-keygen -t ed25519 -f \"$HOME/.ssh/id_ed25519_$(date +%Y%m%d)\" -N '' -C 'generated_by_jarvis'",
+      "response": "Генерирую SSH ключ.",
+      "speak_output": false
+    },
+    {
+      "id": "start_http_server",
+      "phrases": [
+        "запусти локальный сервер",
+        "старт http сервера"
+      ],
+      "command": "cd \"$HOME\" && python -m http.server 8000 &",
+      "response": "Запускаю HTTP сервер на порту 8000.",
+      "speak_output": false
+    },
+    {
+      "id": "stop_http_server",
+      "phrases": [
+        "останови локальный сервер",
+        "стоп http сервер"
+      ],
+      "command": "pkill -f 'python.*http.server'",
+      "response": "Останавливаю HTTP сервер.",
+      "speak_output": false
+    },
+    {
+      "id": "scan_network",
+      "phrases": [
+        "просканируй сеть",
+        "покажи устройства в сети"
+      ],
+      "command": "nmap -sn $(ip route | grep -m1 '/' | awk '{print $1}') 2>/dev/null | grep 'Nmap scan' | wc -l",
+      "response": "Сканирую сеть.",
+      "done_message": "Сканирование завершено.",
+      "speak_output": true,
+      "background": true,
+      "timeout": 60
+    },
+    {
+      "id": "open_nvidia_settings",
+      "phrases": [
+        "открой настройки nvidia",
+        "запусти nvidia settings"
+      ],
+      "command": "nvidia-settings &",
+      "response": "Открываю настройки NVIDIA.",
+      "speak_output": false
+    },
+    {
+      "id": "open_pavucontrol",
+      "phrases": [
+        "открой настройки звука",
+        "запусти pavucontrol"
+      ],
+      "command": "pavucontrol &",
+      "response": "Открываю настройки звука.",
+      "speak_output": false
+    },
+    {
+      "id": "take_break_reminder",
+      "phrases": [
+        "напомни отдохнуть через час",
+        "напоминание о перерыве"
+      ],
+      "command": "sleep 3600 && notify-send 'Перерыв' 'Пора встать и размяться!' &",
+      "response": "Напомню отдохнуть через час.",
+      "speak_output": false
+    },
+    {
+      "id": "pomodoro_start",
+      "phrases": [
+        "запусти помодоро",
+        "старт таймера помодоро"
+      ],
+      "command": "notify-send 'Помодоро' 'Фокус на 25 минут!' && sleep 1500 && notify-send 'Помодоро' 'Перерыв 5 минут!' &",
+      "response": "Запускаю помодоро таймер.",
+      "speak_output": false
+    },
+    {
+      "id": "hibernate",
+      "phrases": [
+        "гибернация",
+        "уйди в гибернацию"
+      ],
+      "command": "systemctl hibernate",
+      "response": "Ухожу в гибернацию.",
+      "speak_output": false,
+      "speak_before": true,
+      "min_score": 0.9,
+      "confirm": true,
+      "confirm_prompt": "Точно гибернация? Скажи да."
+    },
+    {
+      "id": "hybrid_sleep",
+      "phrases": [
+        "гибридный сон",
+        "hybrid sleep"
+      ],
+      "command": "systemctl hybrid-sleep",
+      "response": "Перехожу в гибридный сон.",
+      "speak_output": false,
+      "speak_before": true
+    },
+    {
+      "id": "browser_next_tab",
+      "phrases": [
+        "следующая вкладка",
+        "следующий таб",
+        "переключи вкладку"
+      ],
+      "command": "bash $HOME/jarvis/scripts/browser_tab.sh next",
+      "response": "Следующая вкладка.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_prev_tab",
+      "phrases": [
+        "предыдущая вкладка",
+        "предыдущий таб"
+      ],
+      "command": "bash $HOME/jarvis/scripts/browser_tab.sh prev",
+      "response": "Предыдущая вкладка.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_close_tab",
+      "phrases": [
+        "закрой вкладку",
+        "закрой таб"
+      ],
+      "command": "bash $HOME/jarvis/scripts/browser_tab.sh close",
+      "response": "Закрываю вкладку.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_new_tab",
+      "phrases": [
+        "новая вкладка",
+        "открой новую вкладку"
+      ],
+      "command": "bash $HOME/jarvis/scripts/browser_tab.sh new",
+      "response": "Новая вкладка.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_reopen_tab",
+      "phrases": [
+        "верни вкладку",
+        "восстанови вкладку",
+        "открой закрытую вкладку"
+      ],
+      "command": "bash $HOME/jarvis/scripts/browser_tab.sh reopen",
+      "response": "Восстанавливаю вкладку.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_refresh",
+      "phrases": [
+        "обнови страницу",
+        "перезагрузи страницу",
+        "рефреш"
+      ],
+      "command": "bash $HOME/jarvis/scripts/browser_tab.sh refresh",
+      "response": "Обновляю страницу.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_zoom_in",
+      "phrases": [
+        "увеличь масштаб",
+        "зум плюс",
+        "приблизь страницу"
+      ],
+      "command": "bash $HOME/jarvis/scripts/browser_zoom.sh in",
+      "response": "Увеличиваю масштаб.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_zoom_out",
+      "phrases": [
+        "уменьши масштаб",
+        "зум минус",
+        "отдали страницу"
+      ],
+      "command": "bash $HOME/jarvis/scripts/browser_zoom.sh out",
+      "response": "Уменьшаю масштаб.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_zoom_reset",
+      "phrases": [
+        "сброс масштаба",
+        "нормальный масштаб",
+        "зум сто процентов"
+      ],
+      "command": "bash $HOME/jarvis/scripts/browser_zoom.sh reset",
+      "response": "Сбрасываю масштаб.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_back",
+      "phrases": [
+        "назад в браузере",
+        "страница назад",
+        "вернись назад"
+      ],
+      "command": "xdotool search --class firefox windowactivate key --clearmodifiers alt+Left",
+      "response": "Возвращаюсь назад.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_forward",
+      "phrases": [
+        "вперед в браузере",
+        "страница вперед"
+      ],
+      "command": "xdotool search --class firefox windowactivate key --clearmodifiers alt+Right",
+      "response": "Вперёд.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_bookmarks",
+      "phrases": [
+        "открой закладки",
+        "покажи закладки"
+      ],
+      "command": "xdotool search --class firefox windowactivate key --clearmodifiers ctrl+shift+o",
+      "response": "Открываю закладки.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_history",
+      "phrases": [
+        "открой историю",
+        "покажи историю браузера"
+      ],
+      "command": "xdotool search --class firefox windowactivate key --clearmodifiers ctrl+h",
+      "response": "Открываю историю.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_downloads_window",
+      "phrases": [
+        "открой загрузки браузера",
+        "покажи загрузки в браузере"
+      ],
+      "command": "xdotool search --class firefox windowactivate key --clearmodifiers ctrl+shift+y",
+      "response": "Открываю загрузки.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_private_window",
+      "phrases": [
+        "приватное окно",
+        "инкогнито",
+        "открой приватный режим"
+      ],
+      "command": "firefox --private-window &",
+      "response": "Открываю приватное окно.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_find_page",
+      "phrases": [
+        "поиск на странице",
+        "найди на странице"
+      ],
+      "command": "xdotool search --class firefox windowactivate key --clearmodifiers ctrl+f",
+      "response": "Открываю поиск на странице.",
+      "speak_output": false
+    },
+    {
+      "id": "browser_fullscreen",
+      "phrases": [
+        "полный экран браузера",
+        "браузер на весь экран"
+      ],
+      "command": "xdotool search --class firefox windowactivate key --clearmodifiers F11",
+      "response": "Переключаю полноэкранный режим.",
+      "speak_output": false
+    },
+    {
+      "id": "window_tile_left",
+      "phrases": [
+        "прижми окно влево",
+        "окно на левую половину"
+      ],
+      "command": "bash $HOME/jarvis/scripts/window_control.sh tile_left",
+      "response": "Прижимаю окно влево.",
+      "speak_output": false
+    },
+    {
+      "id": "window_tile_right",
+      "phrases": [
+        "прижми окно вправо",
+        "окно на правую половину"
+      ],
+      "command": "bash $HOME/jarvis/scripts/window_control.sh tile_right",
+      "response": "Прижимаю окно вправо.",
+      "speak_output": false
+    },
+    {
+      "id": "window_center",
+      "phrases": [
+        "центрируй окно",
+        "окно по центру"
+      ],
+      "command": "bash $HOME/jarvis/scripts/window_control.sh center",
+      "response": "Центрирую окно.",
+      "speak_output": false
+    },
+    {
+      "id": "window_always_on_top",
+      "phrases": [
+        "окно поверх всех",
+        "всегда сверху"
+      ],
+      "command": "bash $HOME/jarvis/scripts/window_control.sh always_on_top",
+      "response": "Переключаю режим поверх всех.",
+      "speak_output": false
+    },
+    {
+      "id": "window_fullscreen_toggle",
+      "phrases": [
+        "полный экран окна",
+        "переключи полный экран"
+      ],
+      "command": "bash $HOME/jarvis/scripts/window_control.sh fullscreen",
+      "response": "Переключаю полноэкранный режим.",
+      "speak_output": false
+    },
+    {
+      "id": "show_cpu_model",
+      "phrases": [
+        "какой процессор",
+        "модель процессора"
+      ],
+      "command": "bash $HOME/jarvis/scripts/system_info.sh cpu_model",
+      "response": "Процессор:",
+      "speak_output": true
+    },
+    {
+      "id": "show_total_memory",
+      "phrases": [
+        "сколько всего памяти",
+        "объем памяти"
+      ],
+      "command": "bash $HOME/jarvis/scripts/system_info.sh total_memory",
+      "response": "Всего памяти:",
+      "speak_output": true
+    },
+    {
+      "id": "show_architecture",
+      "phrases": [
+        "какая архитектура",
+        "покажи архитектуру"
+      ],
+      "command": "bash $HOME/jarvis/scripts/system_info.sh arch",
+      "response": "Архитектура:",
+      "speak_output": true
+    },
+    {
+      "id": "show_desktop_environment",
+      "phrases": [
+        "какое окружение рабочего стола",
+        "какой десктоп"
+      ],
+      "command": "bash $HOME/jarvis/scripts/system_info.sh desktop",
+      "response": "Рабочий стол:",
+      "speak_output": true
+    },
+    {
+      "id": "active_connections_count",
+      "phrases": [
+        "сколько активных соединений",
+        "количество соединений"
+      ],
+      "command": "bash $HOME/jarvis/scripts/network_ops.sh active_connections",
+      "response": "Активных соединений:",
+      "speak_output": true
+    },
+    {
+      "id": "connected_wifi_name",
+      "phrases": [
+        "к какой сети подключен",
+        "имя wifi сети"
+      ],
+      "command": "bash $HOME/jarvis/scripts/network_ops.sh connected_wifi",
+      "response": "Подключен к сети:",
+      "speak_output": true
+    },
+    {
+      "id": "wifi_signal_strength",
+      "phrases": [
+        "сила сигнала wifi",
+        "уровень сигнала"
+      ],
+      "command": "bash $HOME/jarvis/scripts/network_ops.sh wifi_signal",
+      "response": "Сигнал WiFi:",
+      "speak_output": true
+    },
+    {
+      "id": "show_all_local_ips",
+      "phrases": [
+        "покажи все локальные айпи",
+        "все ip адреса"
+      ],
+      "command": "bash $HOME/jarvis/scripts/network_ops.sh local_ips",
+      "response": "Локальные IP:",
+      "speak_output": true
+    },
+    {
+      "id": "ping_latency_test",
+      "phrases": [
+        "проверь задержку сети",
+        "какой пинг"
+      ],
+      "command": "bash $HOME/jarvis/scripts/network_ops.sh ping_latency",
+      "response": "Средняя задержка:",
+      "speak_output": true,
+      "timeout": 10
+    },
+    {
+      "id": "clipboard_save_to_file",
+      "phrases": [
+        "сохрани буфер в файл",
+        "буфер обмена в файл"
+      ],
+      "command": "bash $HOME/jarvis/scripts/clipboard_ops.sh save_to_file",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "clipboard_count_chars",
+      "phrases": [
+        "сколько символов в буфере",
+        "количество символов"
+      ],
+      "command": "bash $HOME/jarvis/scripts/clipboard_ops.sh count_chars",
+      "response": "Символов в буфере:",
+      "speak_output": true
+    },
+    {
+      "id": "clipboard_count_words",
+      "phrases": [
+        "сколько слов в буфере",
+        "количество слов"
+      ],
+      "command": "bash $HOME/jarvis/scripts/clipboard_ops.sh count_words",
+      "response": "Слов в буфере:",
+      "speak_output": true
+    },
+    {
+      "id": "clipboard_to_uppercase",
+      "phrases": [
+        "буфер в верхний регистр",
+        "капслок буфер"
+      ],
+      "command": "bash $HOME/jarvis/scripts/clipboard_ops.sh to_uppercase",
+      "response": "Преобразовано в верхний регистр.",
+      "speak_output": false
+    },
+    {
+      "id": "clipboard_to_lowercase",
+      "phrases": [
+        "буфер в нижний регистр",
+        "маленькие буквы"
+      ],
+      "command": "bash $HOME/jarvis/scripts/clipboard_ops.sh to_lowercase",
+      "response": "Преобразовано в нижний регистр.",
+      "speak_output": false
+    },
+    {
+      "id": "recent_files_count",
+      "phrases": [
+        "сколько файлов за сегодня",
+        "файлы за день"
+      ],
+      "command": "bash $HOME/jarvis/scripts/file_ops.sh count_recent",
+      "response": "Файлов изменено за последние сутки:",
+      "speak_output": true
+    },
+    {
+      "id": "downloads_folder_size",
+      "phrases": [
+        "размер папки загрузок",
+        "сколько весят загрузки"
+      ],
+      "command": "bash $HOME/jarvis/scripts/file_ops.sh size_downloads",
+      "response": "Загрузки занимают:",
+      "speak_output": true
+    },
+    {
+      "id": "home_folder_size",
+      "phrases": [
+        "размер домашней папки",
+        "сколько весит дом"
+      ],
+      "command": "bash $HOME/jarvis/scripts/file_ops.sh size_home",
+      "response": "Домашняя папка занимает:",
+      "speak_output": true
+    },
+    {
+      "id": "temp_folder_size",
+      "phrases": [
+        "размер temp папки",
+        "сколько весит temp"
+      ],
+      "command": "bash $HOME/jarvis/scripts/file_ops.sh temp_size",
+      "response": "Временные файлы занимают:",
+      "speak_output": true
+    },
+    {
+      "id": "clean_temp",
+      "phrases": [
+        "почисти temp",
+        "очисти временные файлы"
+      ],
+      "command": "sudo rm -rf /tmp/* /var/tmp/* 2>/dev/null",
+      "response": "Очищаю временные файлы.",
+      "speak_output": false
+    },
+    {
+      "id": "open_task_manager",
+      "phrases": [
+        "открой диспетчер задач",
+        "менеджер задач"
+      ],
+      "command": "xfce4-taskmanager &",
+      "response": "Открываю диспетчер задач.",
+      "speak_output": false
+    },
+    {
+      "id": "open_system_logs",
+      "phrases": [
+        "открой системные логи",
+        "покажи логи"
+      ],
+      "command": "xfce4-terminal -e 'journalctl -f' &",
+      "response": "Открываю системные логи.",
+      "speak_output": false
+    },
+    {
+      "id": "search_files",
+      "phrases": [
+        "найди файлы",
+        "поиск файлов"
+      ],
+      "command": "catfish &",
+      "response": "Открываю поиск файлов.",
+      "speak_output": false
+    },
+    {
+      "id": "media_stop",
+      "phrases": [
+        "останови музыку",
+        "стоп плеер"
+      ],
+      "command": "playerctl stop",
+      "response": "Останавливаю.",
+      "speak_output": false
+    },
+    {
+      "id": "show_media_info",
+      "phrases": [
+        "что играет",
+        "какой трек",
+        "информация о треке"
+      ],
+      "command": "playerctl metadata --format '{{ artist }} - {{ title }}' 2>/dev/null || echo 'ничего не играет'",
+      "response": "Сейчас играет:",
+      "speak_output": true
+    },
+    {
+      "id": "media_volume_up",
+      "phrases": [
+        "громче музыку",
+        "увеличь громкость плеера"
+      ],
+      "command": "playerctl volume 0.1+",
+      "response": "Громче.",
+      "speak_output": false
+    },
+    {
+      "id": "media_volume_down",
+      "phrases": [
+        "тише музыку",
+        "уменьши громкость плеера"
+      ],
+      "command": "playerctl volume 0.1-",
+      "response": "Тише.",
+      "speak_output": false
+    },
+    {
+      "id": "open_stackoverflow",
+      "phrases": [
+        "открой стек оверфлоу",
+        "открой stackoverflow"
+      ],
+      "command": "firefox https://stackoverflow.com &",
+      "response": "Открываю Stack Overflow.",
+      "speak_output": false
+    },
+    {
+      "id": "open_wikipedia",
+      "phrases": [
+        "открой википедию",
+        "открой вики"
+      ],
+      "command": "firefox https://ru.wikipedia.org &",
+      "response": "Открываю Википедию.",
+      "speak_output": false
+    },
+    {
+      "id": "open_translate",
+      "phrases": [
+        "открой переводчик",
+        "гугл переводчик"
+      ],
+      "command": "firefox https://translate.google.com &",
+      "response": "Открываю переводчик.",
+      "speak_output": false
+    },
+    {
+      "id": "open_protondb",
+      "phrases": [
+        "открой протон дб",
+        "protondb"
+      ],
+      "command": "firefox https://protondb.com &",
+      "response": "Открываю ProtonDB.",
+      "speak_output": false
+    },
+    {
+      "id": "open_arch_wiki",
+      "phrases": [
+        "открой арч вики",
+        "arch wiki"
+      ],
+      "command": "firefox https://wiki.archlinux.org &",
+      "response": "Открываю Arch Wiki.",
+      "speak_output": false
+    },
+    {
+      "id": "disable_internet",
+      "phrases": [
+        "отключи интернет",
+        "вырубь интернет"
+      ],
+      "command": "nmcli networking off",
+      "response": "Интернет отключён.",
+      "speak_output": false
+    },
+    {
+      "id": "enable_internet",
+      "phrases": [
+        "включи интернет",
+        "восстанови интернет"
+      ],
+      "command": "nmcli networking on",
+      "response": "Интернет включён.",
+      "speak_output": false
+    },
+    {
+      "id": "airplane_mode_on",
+      "phrases": [
+        "режим полёта",
+        "включи режим полёта"
+      ],
+      "command": "nmcli radio all off",
+      "response": "Режим полёта включён.",
+      "speak_output": false
+    },
+    {
+      "id": "airplane_mode_off",
+      "phrases": [
+        "выключи режим полёта",
+        "отключи режим полёта"
+      ],
+      "command": "nmcli radio all on",
+      "response": "Режим полёта выключен.",
+      "speak_output": false
+    },
+    {
+      "id": "show_current_window",
+      "phrases": [
+        "какое окно активно",
+        "название окна"
+      ],
+      "command": "xdotool getactivewindow getwindowname",
+      "response": "Активное окно:",
+      "speak_output": true
+    },
+    {
+      "id": "show_running_apps",
+      "phrases": [
+        "какие программы запущены",
+        "работающие приложения"
+      ],
+      "command": "ps aux --sort=-%mem | head -6 | tail -5 | awk '{print $11}' | xargs basename -a | tr '\n' ', ' | sed 's/, $//'",
+      "response": "Топ программ по памяти:",
+      "speak_output": true
+    },
+    {
+      "id": "kill_frozen_window",
+      "phrases": [
+        "убей зависшее окно",
+        "закрой зависшее приложение"
+      ],
+      "command": "xkill",
+      "response": "Кликни на зависшее окно для закрытия.",
+      "speak_output": false
+    },
+    {
+      "id": "open_calendar_app",
+      "phrases": [
+        "открой календарь",
+        "запусти календарь"
+      ],
+      "command": "orage &",
+      "response": "Открываю календарь.",
+      "speak_output": false
+    },
+    {
+      "id": "open_notes",
+      "phrases": [
+        "открой заметки",
+        "запусти заметки"
+      ],
+      "command": "xfce4-notes &",
+      "response": "Открываю заметки.",
+      "speak_output": false
+    },
+    {
+      "id": "timer_5min",
+      "phrases": [
+        "таймер на пять минут",
+        "напомни через пять минут"
+      ],
+      "command": "sleep 300 && notify-send 'Таймер' 'Прошло 5 минут!' &",
+      "response": "Таймер на 5 минут запущен.",
+      "speak_output": false
+    },
+    {
+      "id": "timer_10min",
+      "phrases": [
+        "таймер на десять минут",
+        "напомни через десять минут"
+      ],
+      "command": "sleep 600 && notify-send 'Таймер' 'Прошло 10 минут!' &",
+      "response": "Таймер на 10 минут запущен.",
+      "speak_output": false
+    },
+    {
+      "id": "timer_30min",
+      "phrases": [
+        "таймер на тридцать минут",
+        "напомни через полчаса"
+      ],
+      "command": "sleep 1800 && notify-send 'Таймер' 'Прошло 30 минут!' &",
+      "response": "Таймер на 30 минут запущен.",
+      "speak_output": false
+    },
+    {
+      "id": "clear_ram_cache",
+      "phrases": [
+        "очисти кэш памяти",
+        "сбрось кэш оперативки"
+      ],
+      "command": "sudo sync && sudo sysctl -w vm.drop_caches=3",
+      "response": "Очищаю кэш памяти.",
+      "speak_output": false
+    },
+    {
+      "id": "show_biggest_packages",
+      "phrases": [
+        "самые большие пакеты",
+        "какие пакеты занимают место"
+      ],
+      "command": "expac -H M '%m\t%n' | sort -rh | head -5 | awk '{print $2}' | tr '\n' ', ' | sed 's/, $//'",
+      "response": "Самые большие пакеты:",
+      "speak_output": true
+    },
+    {
+      "id": "check_boot_errors",
+      "phrases": [
+        "ошибки при загрузке",
+        "проблемы загрузки системы"
+      ],
+      "command": "journalctl -b -p err | wc -l",
+      "response": "Ошибок при загрузке:",
+      "speak_output": true
+    },
+    {
+      "id": "show_session_time",
+      "phrases": [
+        "сколько я за компьютером",
+        "время сессии"
+      ],
+      "command": "who -u | awk '{print $4}' | head -1",
+      "response": "Сессия начата в:",
+      "speak_output": true
+    },
+    {
+      "id": "list_external_drives",
+      "phrases": [
+        "покажи внешние диски",
+        "какие диски подключены"
+      ],
+      "command": "lsblk -d -o NAME,SIZE,TYPE | grep disk | wc -l",
+      "response": "Подключено дисков:",
+      "speak_output": true
+    },
+    {
+      "id": "safely_remove_usb",
+      "phrases": [
+        "безопасно извлеки юсб",
+        "размонтируй юсб"
+      ],
+      "command": "udisksctl power-off -b /dev/sdb 2>/dev/null || echo 'устройство не найдено'",
+      "response": "Извлекаю USB устройство.",
+      "speak_output": false
+    },
+    {
+      "id": "show_system_architecture_full",
+      "phrases": [
+        "полная информация о системе",
+        "системная информация"
+      ],
+      "command": "uname -a",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "randomize_wallpaper",
+      "phrases": [
+        "смени обои",
+        "случайные обои",
+        "поменяй фон"
+      ],
+      "command": "find $HOME/Pictures -type f \\( -iname '*.jpg' -o -iname '*.png' \\) | shuf -n 1 | xargs -I {} xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s '{}'",
+      "response": "Меняю обои.",
+      "speak_output": false
+    },
+    {
+      "id": "lock_keyboard_mouse",
+      "phrases": [
+        "заблокируй клавиатуру и мышь",
+        "блокировка ввода"
+      ],
+      "command": "xtrlock &",
+      "response": "Блокирую ввод.",
+      "speak_output": false
+    },
+    {
+      "id": "show_clipboard_type",
+      "phrases": [
+        "что в буфере",
+        "тип буфера обмена"
+      ],
+      "command": "xclip -selection clipboard -o -t TARGETS 2>/dev/null | head -1",
+      "response": "Тип содержимого буфера:",
+      "speak_output": true
+    },
+    {
+      "id": "discord_call_generic",
+      "phrases": [
+        "позвони в дискорде",
+        "звони в discord",
+        "дискорд звонок"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_call.sh friend",
+      "response": "Звоню в Discord.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "discord_call_alex",
+      "phrases": [
+        "позвони алексу",
+        "звони алексу в дискорде",
+        "позвони alex"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_call.sh alex",
+      "response": "Звоню Алексу в Discord.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "discord_call_dima",
+      "phrases": [
+        "позвони диме",
+        "звони диме в дискорде",
+        "позвони dima"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_call.sh dima",
+      "response": "Звоню Диме в Discord.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "discord_call_max",
+      "phrases": [
+        "позвони максу",
+        "звони максу в дискорде",
+        "позвони max"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_call.sh max",
+      "response": "Звоню Максу в Discord.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "discord_call_ivan",
+      "phrases": [
+        "позвони ивану",
+        "звони ивану в дискорде",
+        "позвони ivan"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_call.sh ivan",
+      "response": "Звоню Ивану в Discord.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "discord_call_kate",
+      "phrases": [
+        "позвони кате",
+        "звони кате в дискорде",
+        "позвони kate"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_call.sh kate",
+      "response": "Звоню Кате в Discord.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "discord_video_call_fen",
+      "phrases": [
+        "видеозвонок фену",
+        "позвони фену с видео",
+        "видео звонок fen"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_video_call.sh fen",
+      "response": "Видеозвонок Фену.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "discord_video_call_generic",
+      "phrases": [
+        "видеозвонок в дискорде",
+        "видео звонок discord"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_video_call.sh friend",
+      "response": "Начинаю видеозвонок.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "discord_hangup_call",
+      "phrases": [
+        "положи трубку",
+        "заверши звонок",
+        "отключись от звонка",
+        "повесь трубку в дискорде"
+      ],
+      "command": "bash $HOME/jarvis/scripts/discord_hangup.sh",
+      "response": "Завершаю звонок.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_open_friends",
+      "phrases": [
+        "открой друзей в дискорде",
+        "список друзей discord"
+      ],
+      "command": "xdotool search --class discord windowactivate key --clearmodifiers ctrl+shift+f",
+      "response": "Открываю список друзей.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_open_dm",
+      "phrases": [
+        "открой личные сообщения",
+        "личка в дискорде",
+        "дм дискорд"
+      ],
+      "command": "xdotool search --class discord windowactivate key --clearmodifiers ctrl+k",
+      "response": "Открываю личные сообщения.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_search",
+      "phrases": [
+        "поиск в дискорде",
+        "найди в discord"
+      ],
+      "command": "xdotool search --class discord windowactivate key --clearmodifiers ctrl+f",
+      "response": "Открываю поиск.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_toggle_mute_self",
+      "phrases": [
+        "заглуши себя в дискорде",
+        "выключи мой микрофон в discord"
+      ],
+      "command": "xdotool search --class discord windowactivate key --clearmodifiers ctrl+shift+m",
+      "response": "Переключаю микрофон.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_toggle_deafen_self",
+      "phrases": [
+        "оглуши себя в дискорде",
+        "выключи мой звук в discord"
+      ],
+      "command": "xdotool search --class discord windowactivate key --clearmodifiers ctrl+shift+d",
+      "response": "Переключаю звук.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_screen_share",
+      "phrases": [
+        "демонстрация экрана в дискорде",
+        "покажи экран в discord",
+        "шери скрин discord"
+      ],
+      "command": "xdotool search --class discord windowactivate key --clearmodifiers ctrl+shift+s",
+      "response": "Начинаю демонстрацию экрана.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_answer_call",
+      "phrases": [
+        "ответь на звонок",
+        "подними трубку",
+        "ответь в дискорде"
+      ],
+      "command": "xdotool search --class discord windowactivate key --clearmodifiers ctrl+Return",
+      "response": "Отвечаю на звонок.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_enable_camera",
+      "phrases": [
+        "включи камеру в дискорде",
+        "камера в discord"
+      ],
+      "command": "xdotool search --class discord windowactivate key --clearmodifiers ctrl+shift+v",
+      "response": "Включаю камеру.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_push_to_talk",
+      "phrases": [
+        "нажми чтобы говорить",
+        "пуш ту ток дискорд"
+      ],
+      "command": "xdotool search --class discord windowactivate keydown grave",
+      "response": "Активирую микрофон.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_status_online",
+      "phrases": [
+        "статус онлайн в дискорде",
+        "я онлайн discord"
+      ],
+      "command": "notify-send 'Discord' 'Смена статуса на онлайн (требуется ручная настройка)'",
+      "response": "Меняю статус на онлайн.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_status_dnd",
+      "phrases": [
+        "не беспокоить в дискорде",
+        "статус дндшка discord"
+      ],
+      "command": "notify-send 'Discord' 'Смена статуса на Не беспокоить (требуется ручная настройка)'",
+      "response": "Меняю статус на Не беспокоить.",
+      "speak_output": false
+    },
+    {
+      "id": "discord_status_invisible",
+      "phrases": [
+        "невидимка в дискорде",
+        "статус невидимый discord"
+      ],
+      "command": "notify-send 'Discord' 'Смена статуса на невидимый (требуется ручная настройка)'",
+      "response": "Меняю статус на невидимый.",
+      "speak_output": false
+    },
+    {
+      "id": "system_summary",
+      "phrases": [
+        "полная информация о системе",
+        "сводка системы",
+        "статус всей системы",
+        "информация о железе"
+      ],
+      "command": "bash $HOME/jarvis/scripts/system_summary.sh",
+      "response": "",
+      "speak_output": true,
+      "timeout": 15
+    },
+    {
+      "id": "top_memory_processes",
+      "phrases": [
+        "топ по памяти",
+        "какие процессы едят память",
+        "покажи процессы по памяти"
+      ],
+      "command": "bash $HOME/jarvis/scripts/topmem.sh",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "clear_memory_cache",
+      "phrases": [
+        "очисти кэш памяти",
+        "сбрось кэш памяти",
+        "почисти кэш рама"
+      ],
+      "command": "bash $HOME/jarvis/scripts/clearcache.sh",
+      "response": "Кэш памяти очищен.",
+      "speak_output": false,
+      "min_score": 0.8,
+      "confirm": true,
+      "confirm_prompt": "Точно очистить кэш памяти? Скажи да."
+    },
+    {
+      "id": "all_temperatures",
+      "phrases": [
+        "все температуры",
+        "покажи температуры датчиков",
+        "температура процессора и видеокарты"
+      ],
+      "command": "bash $HOME/jarvis/scripts/alltemps.sh",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "services_status",
+      "phrases": [
+        "статус сервисов",
+        "какие сервисы работают",
+        "покажи системные сервисы"
+      ],
+      "command": "bash $HOME/jarvis/scripts/services_status.sh",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "open_ports",
+      "phrases": [
+        "открытые порты",
+        "какие порты слушают",
+        "покажи слушающие порты"
+      ],
+      "command": "bash $HOME/jarvis/scripts/openports.sh",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "pci_devices",
+      "phrases": [
+        "покажи pci устройства",
+        "видеокарта и контроллеры",
+        "аппаратное обеспечение pci"
+      ],
+      "command": "bash $HOME/jarvis/scripts/pcidevices.sh",
+      "response": "",
+      "speak_output": true
+    },
+    {
+      "id": "start_coding_session",
+      "phrases": [
+        "давай кодить",
+        "начать кодинг",
+        "открой сессию кодинга",
+        "хочу кодить"
+      ],
+      "command": "bash $HOME/jarvis/scripts/start_coding_session.sh",
+      "response": "Открываю терминал с omniroute и claude. Режим кодинга включен — говори задачи.",
+      "speak_output": false,
+      "timeout": 30
+    },
+    {
+      "id": "stop_coding_session",
+      "phrases": [
+        "стоп кодинг",
+        "стоп кодить",
+        "выход из кодинга",
+        "завершить кодинг",
+        "хватит кодить"
+      ],
+      "command": "bash $HOME/jarvis/scripts/stop_coding_session.sh",
+      "response": "Сессия кодинга завершена.",
+      "speak_output": false
+    }
+  ]
+}
