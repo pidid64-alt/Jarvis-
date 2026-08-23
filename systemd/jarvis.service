@@ -8,6 +8,7 @@ Type=simple
 ExecStart=%h/jarvis/venv/bin/python3 %h/jarvis/jarvis.py
 Restart=on-failure
 RestartSec=3
+EnvironmentFile=-%h/.config/jarvis/env
 
 [Install]
 WantedBy=default.target
