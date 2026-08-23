@@ -124,6 +124,23 @@ File is hot-reloaded on every request — no daemon restart needed.
 2. **Fuzzy fallback** (difflib.SequenceMatcher): Only if spoken word count >= target phrase word count (protects against truncated commands like bare "перезагрузи" without object)
 3. Per-command `min_score` overrides global `match_threshold`
 
+## LLM Route (свободная речь, 2026-08)
+
+Перед match_command текст идёт в LLM-парсер (`try_llm_route` → `parse_intent`,
+OpenRouter `https://openrouter.ai/api/v1`, модель `nvidia/nemotron-3-super-120b-a12b:free`).
+LLM возвращает строгий JSON `{command|speak|ask}`:
+
+- видит ТОЛЬКО id/tags/descriptions команд — поле `command` (shell) в промпт не попадает;
+- id проверяется по whitelist (`_validate_action`), dangerous-командам форсируется подтверждение;
+- любая ошибка (нет сети/ключа, битый JSON) → молча fallback на `match_command`;
+- контекст диалога 30с: `conversation_state.py` (STATE_DIR/conversation_state.json).
+
+Ключ: env `OPENROUTER_API_KEY` из `~/.config/jarvis/env`
+(`EnvironmentFile=-` в юнитах; отсутствие файла = работа без LLM).
+Контрольный прогон: `scripts/test_llm.sh` (5 фраз + замер задержки).
+Автономка `autonomy.py` использует тот же конфиг: LLM решает skip/notify,
+результат пишется в STATE_DIR/inbox.json и озвучивается демоном раз в ~120с.
+
 ## VAD Recording (Voice Activity Detection)
 
 Uses `webrtcvad` when available (installed via `webrtcvad-wheels`):
@@ -176,6 +193,7 @@ Each script outputs concise text suitable for TTS. Common patterns:
 - whisper-server (base-q5_1): ~150-250MB resident
 - piper-server (medium voice): ~150-250MB resident
 - wakeword.py (openWakeWord): ~50-80MB resident
-- No Ollama/LLM required for voice commands — separate from NOXY
+- LLM-парсер внешний (OpenRouter, cloud): локальную память не занимает;
+  при недоступности сети/ключа голосовые команды работают через whitelist-matcher
 
 If memory tight: switch whisper to `tiny-q5_1` (~30MB) or run servers on-demand instead of resident.
