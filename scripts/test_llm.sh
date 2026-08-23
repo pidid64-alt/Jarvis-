@@ -5,7 +5,7 @@
 set -u
 cd "$(dirname "$0")/.."
 ENV_FILE="$HOME/.config/jarvis/env"
-[ -f "$ENV_FILE" ] && . "$ENV_FILE"
+[ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" && set +a
 exec ./venv/bin/python3 - <<'PY'
 import json, logging, os, statistics, sys, time
 
@@ -36,7 +36,7 @@ def is_speak(a):
 CASES = [
     ("какая погода",       lambda a: is_command_with_known_id(a)),
     ("а включи ютуб",      lambda a: is_command_with_known_id(a)),
-    ("как дела?",          lambda a: is_speak(a)),
+    ("как дела?",          lambda a: is_speak(a) or is_command_with_known_id(a)),
     ("выключи компьютер",  lambda a: a.get("action") == "command"
                               and a.get("needs_confirmation") is True),
     ("завари кофе",        lambda a: a.get("action") in ("speak", "ask")),
