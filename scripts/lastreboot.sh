@@ -1,7 +1,9 @@
 #!/bin/bash
-info=$(who -b 2>/dev/null | awk '{print $3, $4}')
-if [ -z "$info" ]; then
+# Когда загрузили систему + сколько уже работает.
+boot=$(who -b 2>/dev/null | awk '{print $3, $4}')
+up=$(uptime -p 2>/dev/null | sed 's/^up //')
+if [ -z "$boot" ]; then
   echo "Не удалось узнать время последней загрузки."
-else
-  echo "Последняя загрузка: ${info}."
+  exit 0
 fi
+echo "Последняя загрузка: ${boot}. Работаем уже ${up:-неизвестно сколько}."
