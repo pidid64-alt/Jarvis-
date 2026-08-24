@@ -62,6 +62,14 @@ try:
 except ImportError:
     _conv_available = False
 
+# Нормализация текста для TTS (цифры/размеры/даты по-русски). Опционален:
+# без модуля speak() работает как раньше.
+try:
+    from tts_norm import normalize_for_tts
+    _tts_norm_available = True
+except ImportError:
+    _tts_norm_available = False
+
 # ---------------------------------------------------------------------------
 # Пути и конфиг
 # ---------------------------------------------------------------------------
@@ -256,7 +264,7 @@ def record_audio_fixed(cfg: dict, path: Path):
 def record_audio_vad(cfg: dict, path: Path) -> bool:
     """
     Запись с VAD: ждём начала речи, пишем до vad_silence_seconds тишины
-    после неё, но не дольше max_record_seconds. Возвращает False, если
+    после неё, но дольше max_record_seconds. Возвращает False, если
     речь так и не началась за vad_wait_speech_seconds.
 
     PCM читается напрямую из stdout parecord (--raw), кадры по 30мс
@@ -351,6 +359,12 @@ def transcribe(cfg: dict, path: Path) -> str:
 def speak(cfg: dict, text: str):
     if not text:
         return
+    # Цифры, размеры (3.6Gi), даты и проценты переводим в членораздельную речь.
+    if _tts_norm_available:
+        try:
+            text = normalize_for_tts(text)
+        except Exception as e:
+            logging.warning("tts_norm failed: %s", e)
     try:
         resp = requests.post(
             cfg["piper_url"], json={"text": text}, timeout=cfg["http_timeout"]
@@ -568,18 +582,18 @@ def handle_dictation(cfg: dict, cmd: dict):
 # ---------------------------------------------------------------------------
 
 
-def handle_voice_command(cfg: dict):
+def handle_voice_command(cfg: dict) -> bool:
     # Проверяем, активна ли сессия кодинга
     session = load_coding_session()
     if session.get("active") and session.get("window_id"):
         # Режим кодинга: всё голосовое отправляем в claude
         handle_coding_dictation(cfg, session["window_id"])
-        return
+        return False
 
     if not record_audio(cfg, REC_FILE):
         logging.info("VAD: речь не началась, отмена")
         notify("Jarvis", "Тишина — отменяю.")
-        return
+        return False
     notify("Jarvis", "Распознаю…")
 
     try:
@@ -588,17 +602,17 @@ def handle_voice_command(cfg: dict):
         logging.error("STT недоступен: %s", e)
         notify("Jarvis", "STT-сервер не отвечает", urgency="critical")
         speak(cfg, "Не могу связаться с распознаванием речи.")
-        return
+        return False
 
     logging.info("Услышал: %r", text)
     if not text:
         speak(cfg, "Не расслышал, повтори.")
-        return
+        return False
 
-    # Сначала пробуем LLM-маршрут. Если всё ок — обрабатываем его ответ
-    # и возвращаемся. Только при сбое падаем на старый match_command.
-    if try_llm_route(cfg, text):
-        return
+    # Сначала пробуем LLM-маршрут.
+    action_type = try_llm_route(cfg, text)
+    if action_type:
+        return action_type in ("speak", "ask")
 
     commands = load_commands()
     cmd, score = match_command(text, commands, cfg["match_threshold"])
@@ -607,15 +621,15 @@ def handle_voice_command(cfg: dict):
         logging.info("Нет совпадений (best score=%.2f) для %r", score, text)
         notify("Jarvis", f"Не понял: {text}")
         speak(cfg, "Такой команды не знаю.")
-        return
+        return False
 
     handle_command(cfg, cmd, score)
+    return False
 
 
-def try_llm_route(cfg: dict, text: str) -> bool:
-    """Пробует распарсить текст через LLM. Возвращает True, если обработано.
+def try_llm_route(cfg: dict, text: str) -> str | None:
+    """Пробует распарсить текст через LLM. Возвращает тип action или None, если fallback.
 
-    False — fallback, вызывающий код должен запустить match_command.
     Безопасно: любые ошибки ловятся, ничего не падает.
 
     При успешном LLM-маршруте также обновляет диалоговое состояние:
@@ -623,16 +637,16 @@ def try_llm_route(cfg: dict, text: str) -> bool:
     """
     llm_cfg = cfg.get("llm") or {}
     if not (llm_cfg.get("enabled") and _llm_available):
-        return False
+        return None
     model = llm_cfg.get("model", "")
     if not model:
         logging.debug("LLM: model не задан в config.json, fallback")
-        return False
+        return None
     api_key_env = llm_cfg.get("api_key_env", "OMNIROUTE_API_KEY")
     api_key = os.environ.get(api_key_env, "")
     if not api_key:
         logging.debug("LLM: env %s не задан, fallback", api_key_env)
-        return False
+        return None
 
     client = LLMClient(
         base_url=llm_cfg["base_url"],
@@ -660,10 +674,10 @@ def try_llm_route(cfg: dict, text: str) -> bool:
     except LLMError as e:
         if llm_cfg.get("fallback_to_match", True):
             logging.warning("LLM parse failed, fallback: %s", e)
-            return False
+            return None
         logging.error("LLM parse failed (no fallback): %s", e)
         speak(cfg, "Не удалось связаться с мозгом.")
-        return True
+        return "speak"
 
     logging.info("LLM action: %s", action)
 
@@ -685,22 +699,22 @@ def try_llm_route(cfg: dict, text: str) -> bool:
         cmd = next((c for c in commands if c.get("id") == action["id"]), None)
         if cmd is None:
             logging.error("LLM вернул несуществующий id %s — whitelist-баг",
-                          action["id"])
-            return False
+                           action["id"])
+            return None
         # Принудительная установка confirm, если LLM потребовал
         if action.get("needs_confirmation") and not cmd.get("confirm"):
             cmd = dict(cmd)
             cmd["confirm"] = True
         handle_command(cfg, cmd, 1.0)
-        return True
+        return "command"
 
     if action["action"] in ("speak", "ask"):
         speak(cfg, action["text"])
-        return True
+        return action["action"]
 
     # Неизвестный action — fallback
     logging.warning("LLM вернул неизвестный action: %r", action)
-    return False
+    return None
 
 
 def handle_coding_dictation(cfg: dict, window_id: int):
@@ -729,7 +743,7 @@ def handle_coding_dictation(cfg: dict, window_id: int):
     if text_lower in {"стоп кодинг", "стоп кодить", "выход из кодинга", "завершить кодинг", "хватит кодить"}:
         clear_coding_session()
         speak(cfg, "Сессия кодинга завершена.")
-        notify("Jarvis", "Режим кодинга выключен.")
+        notify("Режим кодинга выключен.")
         return
 
     # Отправляем в claude
@@ -740,7 +754,7 @@ def handle_coding_dictation(cfg: dict, window_id: int):
         logging.warning("Окно claude недоступно, выключаю режим кодинга")
         clear_coding_session()
         speak(cfg, "Окно терминала потеряно, сессия кодинга завершена.")
-        notify("Jarvis", "Терминал не найден, режим кодинга выключен.", urgency="normal")
+        notify("Терминал не найден, режим кодинга выключен.", urgency="normal")
 
 
 trigger_event = threading.Event()
@@ -815,7 +829,9 @@ def run_daemon(cfg: dict):
                 if not processing_lock.acquire(blocking=False):
                     continue
                 try:
-                    handle_voice_command(cfg)
+                    while True:
+                        if not handle_voice_command(cfg):
+                            break
                 except Exception:
                     logging.exception("Необработанная ошибка в цикле обработки")
                 finally:
