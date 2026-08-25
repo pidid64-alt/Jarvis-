@@ -118,21 +118,37 @@ Key fields:
 
 File is hot-reloaded on every request — no daemon restart needed.
 
-## Matcher Logic (match_command in jarvis.py)
+## Matcher Logic and Request Pipeline (jarvis.py)
 
-1. **Exact substring match**: Among all phrases fully contained in recognized text, picks the LONGEST/most specific (prevents "есть обновления" from swallowing "есть обновления из аур")
-2. **Fuzzy fallback** (difflib.SequenceMatcher): Only if spoken word count >= target phrase word count (protects against truncated commands like bare "перезагрузи" without object)
-3. Per-command `min_score` overrides global `match_threshold`
+Поток обработки реплики после STT — три ступени, по возрастанию задержки:
 
-## LLM Route (свободная речь, 2026-08)
+1. **Exact fast-path** (`match_commands_exact`): все непересекающиеся ТОЧНЫЕ
+   вхождения фраз в текст (жадно от самой длинной, дедуп по id, порядок как в
+   речи). Нашлись → команды исполняются локально мгновенно, БЕЗ LLM. Защита
+   от «проглатывания»: если слов вне найденных фраз больше
+   `exact_max_extra_words` (default 6) — реплика уходит на ступень 2.
+   Здесь же работают мультикоманды без сети («открой дискорд и какая погода»).
+2. **LLM-маршрут** (`try_llm_route`) — свободная речь, опечатки, мультикоманды.
+3. **Fuzzy fallback** (`match_command`, одиночный результат):
+   difflib.SequenceMatcher только если сказано не меньше слов, чем во фразе;
+   среди точных вхождений выбирается самое длинное/специфичное;
+   per-command `min_score` переопределяет глобальный `match_threshold`.
 
-Перед match_command текст идёт в LLM-парсер (`try_llm_route` → `parse_intent`,
+## LLM Route (свободная речь + мультикоманды, 2026-08)
+
+Ступень 2: текст идёт в LLM-парсер (`try_llm_route` → `parse_intent`,
 OpenRouter `https://openrouter.ai/api/v1`, модель `nvidia/nemotron-3-super-120b-a12b:free`).
-LLM возвращает строгий JSON `{command|speak|ask}`:
+LLM возвращает строгий JSON со СПИСКОМ действий `{"actions": [{command|speak|ask}, ...]}`
+(до 4; старый одиночный формат тоже принимается):
 
+- несколько просьб в одной реплике → элементы массива в порядке произнесения,
+  исполняются последовательно, каждое озвучивает свой ответ;
 - видит ТОЛЬКО id/tags/descriptions команд — поле `command` (shell) в промпт не попадает;
-- id проверяется по whitelist (`_validate_action`), dangerous-командам форсируется подтверждение;
-- любая ошибка (нет сети/ключа, битый JSON) → молча fallback на `match_command`;
+- каждый элемент проверяется по whitelist (`_validate_action`), dangerous-командам
+  форсируется подтверждение; несуществующий id посреди батча пропускается (не fallback —
+  часть действий уже исполнена);
+- любая ошибка ДО исполнения (нет сети/ключа, битый JSON, пустой список) → молча
+  fallback на `match_command`;
 - контекст диалога 30с: `conversation_state.py` (STATE_DIR/conversation_state.json).
 
 Ключ: env `OPENROUTER_API_KEY` из `~/.config/jarvis/env`
