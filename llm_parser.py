@@ -2,13 +2,16 @@
 """
 llm_parser.py
 -------------
-Превращает распознанный голосовой текст в структурированное действие через
-локальный OmniRoute (OpenAI-совместимый API).
+Превращает распознанный голосовой текст в структурированные действия через
+LLM (OpenAI-совместимый API, OpenRouter).
 
-Действие строго одного из трёх типов:
+Ответ — СПИСОК действий (обычно из одного; несколько — когда пользователь
+попросил несколько вещей в одной реплике). Действие строго одного из трёх типов:
   {"action": "command", "id": "<id команды>", "needs_confirmation": bool}
   {"action": "speak",   "text": "<что сказать голосом>"}
   {"action": "ask",     "text": "<уточняющий вопрос>"}
+Принимаются и старый формат одиночного объекта, и массив без обёртки —
+всё нормализуется в список.
 
 Никаких shell-команд, путей, имён файлов от LLM — только id из белого
 списка команд или короткий текст для TTS. Это фундаментальное правило
@@ -30,10 +33,16 @@ from llm_client import LLMClient, LLMError
 # нормально говорит до 500 символов, длинное — обрезаем с многоточием.
 MAX_SPEAK_CHARS = 500
 
+# Максимум действий на одну реплику. Защита от галлюцинаций: даже если LLM
+# вернёт десять команд, исполнены будут только первые MAX_ACTIONS.
+MAX_ACTIONS = 4
+
 # Жёсткая схема ответа, объясняемая LLM в системном промпте.
 ACTION_SCHEMA = """{
-  "action": "command" | "speak" | "ask",
-  ...
+  "actions": [
+    {"action": "...", ...},
+    ...до 4 элементов...
+  ]
 }
 
 # command — выполнить заготовку из белого списка:
@@ -46,47 +55,35 @@ ACTION_SCHEMA = """{
 {"action": "ask", "text": "<вопрос>"}
 """
 
-
-SYSTEM_PROMPT_TEMPLATE = """Ты — Jarvis, локальный голосовой ассистент для Linux.
-Распознанный голос пользователя уже прошёл через STT — он может содержать
-опечатки, шумовые артефакты и неформальный стиль. Твоя задача: понять
-НАМЕРЕНИЕ и вернуть строго JSON с действием.
+SYSTEM_PROMPT_TEMPLATE = """Ты — Jarvis, совершенный локальный голосовой ассистент. Твой стиль — вежливый, профессиональный, с легкой ноткой сдержанного остроумия, как у Джарвиса из фильмов.
+Распознанный голос пользователя может содержать опечатки или артефакты STT. Твоя задача: понять НАМЕРЕНИЕ и вернуть строго JSON с действием.
 
 # Правила
 
-1. Никогда не возвращай shell-команды, пути, имена файлов, аргументы или
-   любые другие исполняемые конструкции. Ты — parser, не agent.
+1. БЕЗОПАСНОСТЬ: Никогда не возвращай shell-команды, пути, имена файлов или любые исполняемые конструкции. Ты — интерфейс управления (parser), а не агент с доступом к shell.
 
-2. Доступные действия (whitelist):
+2. Доступные действия:
 {action_schema}
 
-3. Если намерение пользователя совпадает с одной из доступных команд —
-   верни action=command с её id.
+3. Если пользователь хочет выполнить конкретное действие из списка доступных команд — верни элемент action=command с её id.
 
-4. Если намерение — общий вопрос, диалог, благодарность, болтовня (не
-   требует выполнения команды) — верни action=speak с коротким ответом
-   на русском, в стиле Джарвиса (деловой, короткий, до 500 символов).
+4. Если пользователь просто общается, задает общие вопросы или выражает эмоции — верни элемент action=speak. Отвечай естественно и лаконично (до 500 символов). Старайся поддерживать диалог, проявляя заботу о пользователе.
 
-5. Если намерение неясно или неоднозначно — верни action=ask с
-   уточняющим вопросом (например, "Какие именно обновления — системные
-   или AUR?").
+5. Если намерение неясно, неоднозначно или требует уточнения для выбора команды — верни элемент action=ask с вежливым уточняющим вопросом.
 
-6. Для команд с тегом "dangerous" (poweroff, reboot, logout, system_update)
-   всегда ставь needs_confirmation=true.
+6. НЕСКОЛЬКО просьб в одной реплике («открой дискорд и какая погода») — верни массив actions с элементом на каждую просьбу, В ПОРЯДКЕ ПРОИЗНЕСЕНИЯ. Одна просьба — массив из одного элемента. Максимум 4 элемента, лишние просьбы игнорируй.
+
+7. Для команд с тегом "dangerous" (poweroff, reboot, logout, system_update) всегда ставь needs_confirmation=true.
 
 # Доступные команды
-
 {commands_block}
 
-# Текущая тема разговора
-
+# Контекст диалога (последние реплики и текущее время)
 {context_block}
 """
 
-
 def build_commands_block(commands: list[dict]) -> str:
     """Собирает описание команд для системного промпта.
-
     Безопасность: в промпт идут только id, description и tags. Поля
     `command` (shell) сюда НЕ попадают — LLM их никогда не видит и не
     может процитировать обратно.
@@ -105,7 +102,7 @@ def _auto_description(cmd: dict) -> str:
     """Если у команды нет description — собираем из phrases + id."""
     phrases = cmd.get("phrases") or []
     if phrases:
-        return f"Вызывается фразами: {' / '.join(phrases[:3])}."
+        return f"Вызываются фразами: {' / '.join(phrases[:3])}."
     return f"Команда {cmd.get('id', '?')}."
 
 
@@ -130,9 +127,8 @@ def parse_intent(client: LLMClient, user_text: str,
                  commands: list[dict],
                  history_tail: list[dict] | None = None,
                  pending: dict | None = None,
-                 now_str: str = "") -> dict[str, Any]:
-    """Возвращает dict с полями action, плюс id/text/needs_confirmation.
-
+                 now_str: str = "") -> list[dict[str, Any]]:
+    """Возвращает СПИСОК валидированных действий (обычно из одного).
     Бросает LLMError при любой ошибке — jarvis.py ловит и падает на fallback.
     """
     history_tail = history_tail or []
@@ -148,23 +144,24 @@ def parse_intent(client: LLMClient, user_text: str,
     messages.append({"role": "user", "content": user_text.strip()})
 
     raw = client.chat(messages, max_tokens=300, temperature=0.2)
-    action = _extract_json(raw)
+    parsed = _extract_json(raw)
 
-    return _validate_action(action, commands)
+    actions = _normalize_actions(parsed)
+    return [_validate_action(a, commands) for a in actions]
 
 
 # ---------- внутренняя механика ----------
 
-_JSON_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-_JSON_FIRST_OBJ = re.compile(r"\{.*\}", re.DOTALL)
+_JSON_FENCE = re.compile(r"```(?:json)?\s*([\[{].*?[\]}])\s*```", re.DOTALL)
+_JSON_FIRST_OBJ = re.compile(r"[\[{].*[\]}]", re.DOTALL)
 
 
-def _extract_json(raw: str) -> dict:
+def _extract_json(raw: str) -> Any:
     """LLM может вернуть JSON несколькими способами:
-      - чистый JSON-объект
+      - чистый JSON (объект или массив)
       - обёрнутый в ```json ... ```
       - с пояснительным текстом вокруг (например: "Вот ответ: {...}")
-    Ищем самый первый валидный JSON-объект.
+    Ищем самый первый валидный JSON.
     """
     if not raw or not raw.strip():
         raise LLMError("LLM вернул пустой ответ")
@@ -183,7 +180,7 @@ def _extract_json(raw: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    # 3) первый {...} в тексте
+    # 3) первый {...} или [...] в тексте
     m = _JSON_FIRST_OBJ.search(raw)
     if m:
         try:
@@ -192,6 +189,38 @@ def _extract_json(raw: str) -> dict:
             raise LLMError(f"не удалось распарсить JSON: {e}") from e
 
     raise LLMError(f"JSON не найден в ответе LLM: {raw[:200]}")
+
+
+def _normalize_actions(parsed: Any) -> list[dict]:
+    """Приводит ответ LLM к списку dict-действий.
+    Принимаются три формы: {"actions": [...]}, одиночный {...} (legacy)
+    и голый массив [...]. Пустой/невалидный — LLMError.
+    Лишние элементы сверх MAX_ACTIONS отбрасываются с warning.
+    """
+    if isinstance(parsed, dict):
+        raw_actions = parsed.get("actions")
+        if raw_actions is None:
+            # legacy-формат: одиночное действие без обёртки
+            raw_actions = [parsed]
+    elif isinstance(parsed, list):
+        raw_actions = parsed
+    else:
+        raise LLMError(f"ответ не объект и не массив: {type(parsed).__name__}")
+
+    if not isinstance(raw_actions, list):
+        raise LLMError("actions не список")
+
+    if len(raw_actions) > MAX_ACTIONS:
+        logging.warning(
+            "LLM вернул %d действий, оставляю первые %d",
+            len(raw_actions), MAX_ACTIONS,
+        )
+        raw_actions = raw_actions[:MAX_ACTIONS]
+
+    if not raw_actions or not all(isinstance(a, dict) for a in raw_actions):
+        raise LLMError("пустой или невалидный список actions")
+
+    return raw_actions
 
 
 def _validate_action(action: dict, commands: list[dict]) -> dict:
@@ -237,7 +266,6 @@ def _validate_action(action: dict, commands: list[dict]) -> dict:
 def parse_notification_decision(client: LLMClient, rule_prompt: str,
                                 check_result: str) -> dict:
     """Отдельная функция для автономки: LLM решает, стоит ли сообщать.
-
     Возвращает {"action": "skip"} или {"action": "notify", "text": "..."}.
     """
     sys_prompt = (

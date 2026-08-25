@@ -89,6 +89,9 @@ DEFAULT_CONFIG = {
     "sample_rate": 16000,
     "record_seconds": 4,
     "match_threshold": 0.6,
+    # Быстрый путь без LLM: если слов вне найденных точных фраз не больше
+    # этого числа — команды исполняются локально и мгновенно.
+    "exact_max_extra_words": 6,
     "http_timeout": 30,
     # --- VAD (webrtcvad). Если пакета нет — фиксированные record_seconds. ---
     # Агрессивность отсечения не-речи, 0..3: выше — жёстче режет шум,
@@ -437,6 +440,71 @@ def match_command(text: str, commands: list, threshold: float):
     return None, fuzzy_score
 
 
+def match_commands_exact(text: str, commands: list, max_extra_words: int) -> list:
+    """
+    Все команды с точными вхождениями фраз в текст — для быстрого пути
+    без хода в LLM (главный выигрыш по задержке ответа).
+
+    Выбираются непересекающиеся вхождения (жадно от самой длинной фразы,
+    чтобы специфичная не глоталась общей), дедуп по id — одна команда один
+    запуск. Порядок результата — по позиции в тексте, как произнёс пользователь.
+
+    Защита от «проглатывания»: если слов вне найденных фраз больше
+    max_extra_words, реплика считается не-командной (болтовня, где случайно
+    мелькнула команда) и возвращается пустой список — её разберёт LLM.
+    """
+    text_norm = text.lower().strip()
+    if not text_norm:
+        return []
+
+    candidates = []  # (start, end, длина фразы, cmd)
+    for cmd in commands:
+        for phrase in cmd.get("phrases", []):
+            phrase_norm = phrase.lower().strip()
+            if not phrase_norm:
+                continue
+            start = 0
+            while True:
+                idx = text_norm.find(phrase_norm, start)
+                if idx == -1:
+                    break
+                candidates.append(
+                    (idx, idx + len(phrase_norm), len(phrase_norm), cmd))
+                start = idx + 1
+
+    if not candidates:
+        return []
+
+    # жадный выбор непересекающихся вхождений, от самой длинной фразы
+    candidates.sort(key=lambda c: (-c[2], c[0]))
+    chosen = []  # (start, end, cmd)
+    for s, e, _ln, cmd in candidates:
+        if any(not (e <= cs or s >= ce) for cs, ce, _ in chosen):
+            continue
+        chosen.append((s, e, cmd))
+
+    # дедуп по id, порядок по позиции в тексте
+    seen_ids = set()
+    picked = []
+    for s, e, cmd in sorted(chosen, key=lambda c: c[0]):
+        cid = cmd.get("id")
+        if cid in seen_ids:
+            continue
+        seen_ids.add(cid)
+        picked.append((s, e, cmd))
+
+    # лимит «лишних» слов вне командных фраз
+    words_total = len(text_norm.split())
+    matched_words = sum(len(text_norm[s:e].split()) for s, e, _ in picked)
+    extra = words_total - matched_words
+    if extra > max_extra_words:
+        logging.debug("exact fast-path: %d лишних слов > %d — передаю в LLM",
+                      extra, max_extra_words)
+        return []
+
+    return [cmd for _, _, cmd in picked]
+
+
 def run_background(cfg: dict, cmd: dict):
     proc = subprocess.Popen(
         cmd["command"], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -609,12 +677,24 @@ def handle_voice_command(cfg: dict) -> bool:
         speak(cfg, "Не расслышал, повтори.")
         return False
 
-    # Сначала пробуем LLM-маршрут.
+    commands = load_commands()
+
+    # Быстрый путь: точные фразы команд в тексте — исполняем локально и
+    # мгновенно, без хода в облако. Известные фразы снова отвечают за
+    # миллисекунды, как до LLM-маршрута.
+    exact_cmds = match_commands_exact(
+        text, commands, cfg.get("exact_max_extra_words", 6))
+    if exact_cmds:
+        logging.info("Exact fast-path: %s", [c.get("id") for c in exact_cmds])
+        for c in exact_cmds:
+            handle_command(cfg, c, 1.0)
+        return False
+
+    # Точных фраз нет — пробуем LLM-маршрут (мультикоманды, свободная речь).
     action_type = try_llm_route(cfg, text)
     if action_type:
         return action_type in ("speak", "ask")
 
-    commands = load_commands()
     cmd, score = match_command(text, commands, cfg["match_threshold"])
 
     if cmd is None:
@@ -628,12 +708,16 @@ def handle_voice_command(cfg: dict) -> bool:
 
 
 def try_llm_route(cfg: dict, text: str) -> str | None:
-    """Пробует распарсить текст через LLM. Возвращает тип action или None, если fallback.
+    """Пробует распарсить текст через LLM. Возвращает тип последнего
+    значимого действия ("command"/"speak"/"ask") или None — fallback.
 
     Безопасно: любые ошибки ловятся, ничего не падает.
 
-    При успешном LLM-маршруте также обновляет диалоговое состояние:
-    push_turn для user, при action=ask — set_pending.
+    LLM может вернуть НЕСКОЛЬКО действий (мультикоманды) — исполняются
+    последовательно, каждое озвучивает свой ответ. При успешном маршруте
+    также обновляет диалоговое состояние: push_turn для user, реплики
+    ассистента для speak/ask; ask ставит pending, чисто командный батч
+    диалог закрывает.
     """
     llm_cfg = cfg.get("llm") or {}
     if not (llm_cfg.get("enabled") and _llm_available):
@@ -666,7 +750,7 @@ def try_llm_route(cfg: dict, text: str) -> str | None:
 
     try:
         commands = load_commands()
-        action = parse_intent(
+        actions = parse_intent(
             client, text, commands,
             history_tail=history_tail,
             pending=pending,
@@ -679,42 +763,53 @@ def try_llm_route(cfg: dict, text: str) -> str | None:
         speak(cfg, "Не удалось связаться с мозгом.")
         return "speak"
 
-    logging.info("LLM action: %s", action)
+    logging.info("LLM actions: %d шт.", len(actions))
 
-    # Обновляем диалоговое состояние
+    # Диалоговое состояние: реплика пользователя один раз, дальше по действиям.
+    ttl = float(llm_cfg.get("conversation_window_seconds", 30))
     if _conv_available:
-        ttl = float(llm_cfg.get("conversation_window_seconds", 30))
         conv.push_turn("user", text, ttl_seconds=ttl)
-        if action["action"] == "speak":
-            conv.push_turn("assistant", action["text"], ttl_seconds=ttl)
-        elif action["action"] == "ask":
-            conv.push_turn("assistant", action["text"], ttl_seconds=ttl)
-            conv.set_pending(topic=text, question=action["text"],
+
+    saw_conversational = False  # был speak/ask — демон продолжает слушать
+    last_ask_text = None
+
+    for action in actions:
+        act = action["action"]
+        if act == "command":
+            cmd = next((c for c in commands if c.get("id") == action["id"]), None)
+            if cmd is None:
+                # Батч уже частично исполнен — целиком на fallback отдавать
+                # нельзя (риск повторного запуска), просто пропускаем действие.
+                logging.error("LLM вернул несуществующий id %s — пропуск",
+                              action["id"])
+                continue
+            # Принудительная установка confirm, если LLM потребовал
+            if action.get("needs_confirmation") and not cmd.get("confirm"):
+                cmd = dict(cmd)
+                cmd["confirm"] = True
+            handle_command(cfg, cmd, 1.0)
+        elif act in ("speak", "ask"):
+            speak(cfg, action["text"])
+            saw_conversational = True
+            if _conv_available:
+                conv.push_turn("assistant", action["text"], ttl_seconds=ttl)
+            if act == "ask":
+                last_ask_text = action["text"]
+        else:
+            # Неизвестный action — пропускаем, остальные исполняются
+            logging.warning("LLM вернул неизвестный action: %r", act)
+
+    # ask важнее: диалог продолжается; чисто командный батч его закрывает
+    if _conv_available:
+        if last_ask_text is not None:
+            conv.set_pending(topic=text, question=last_ask_text,
                              ttl_seconds=ttl)
-        elif action["action"] == "command":
-            # после команды диалог затухает — закрываем pending
+        elif any(a["action"] == "command" for a in actions):
             conv.clear()
 
-    if action["action"] == "command":
-        cmd = next((c for c in commands if c.get("id") == action["id"]), None)
-        if cmd is None:
-            logging.error("LLM вернул несуществующий id %s — whitelist-баг",
-                           action["id"])
-            return None
-        # Принудительная установка confirm, если LLM потребовал
-        if action.get("needs_confirmation") and not cmd.get("confirm"):
-            cmd = dict(cmd)
-            cmd["confirm"] = True
-        handle_command(cfg, cmd, 1.0)
-        return "command"
-
-    if action["action"] in ("speak", "ask"):
-        speak(cfg, action["text"])
-        return action["action"]
-
-    # Неизвестный action — fallback
-    logging.warning("LLM вернул неизвестный action: %r", action)
-    return None
+    if last_ask_text is not None:
+        return "ask"
+    return "speak" if saw_conversational else "command"
 
 
 def handle_coding_dictation(cfg: dict, window_id: int):
