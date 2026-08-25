@@ -27,6 +27,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 try:
@@ -69,6 +70,14 @@ try:
     _tts_norm_available = True
 except ImportError:
     _tts_norm_available = False
+
+# Веб-поиск (ddgs/DuckDuckGo). Опционален: без него action=search говорит
+# «модуль поиска не установлен».
+try:
+    import web_search
+    _web_search_available = True
+except ImportError:
+    _web_search_available = False
 
 # ---------------------------------------------------------------------------
 # Пути и конфиг
@@ -645,6 +654,64 @@ def handle_dictation(cfg: dict, cmd: dict):
         speak(cfg, "Ошибка выполнения.")
 
 
+def handle_search(cfg: dict, query: str, open_browser: bool,
+                  client=None) -> tuple[str, str]:
+    """
+    Веб-поиск (action=search). open_browser=true — открыть страницу
+    результатов в браузере; иначе — суммаризировать выдачу LLM и сказать
+    голосом (fallback при сбое суммаризации — заголовки сниппетов).
+
+    Возвращает (тип_для_маршрута, озвученный_текст): "speak" продолжает
+    диалог, "command" закрывает.
+    """
+    # открытие браузера — сети за сниппетами не нужно вовсе
+    if open_browser:
+        url = ("https://duckduckgo.com/?q="
+               + urllib.parse.quote_plus(query))
+        try:
+            subprocess.Popen(["xdg-open", url],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            said = f"Открываю результаты по запросу {query}."
+        except Exception:
+            logging.exception("не удалось открыть браузер")
+            said = "Не смог открыть браузер."
+        speak(cfg, said)
+        return "command", said
+
+    try:
+        snippets = web_search.search_snippets(query)
+    except web_search.SearchError as e:
+        logging.warning("search failed: %s", e)
+        speak(cfg, "Поиск недоступен.")
+        return "speak", "Поиск недоступен."
+
+    answer = ""
+    if client is not None:
+        try:
+            sys_prompt = (
+                "Ты Jarvis. Тебе дали результаты веб-поиска. Ответь кратко "
+                "по-русски (2-4 предложения), только по делу, без упоминания "
+                "источников и без markdown. Если в выдаче нет ответа — так и "
+                "скажи коротко."
+            )
+            raw = client.chat(
+                [{"role": "system", "content": sys_prompt},
+                 {"role": "user",
+                  "content": f"Запрос: {query}\n\nРезультаты поиска:\n"
+                             f"{web_search.snippets_to_context(snippets)}"}],
+                max_tokens=200, temperature=0.3)
+            answer = raw.strip()[:500]
+        except LLMError as e:
+            logging.warning("суммаризация поиска не удалась: %s", e)
+
+    if not answer:
+        # fallback без LLM: заголовки топ-сниппетов
+        answer = ". ".join(s["title"] for s in snippets[:3])[:500]
+    speak(cfg, answer)
+    return "speak", answer
+
+
 # ---------------------------------------------------------------------------
 # Основной цикл
 # ---------------------------------------------------------------------------
@@ -795,6 +862,19 @@ def try_llm_route(cfg: dict, text: str) -> str | None:
                 conv.push_turn("assistant", action["text"], ttl_seconds=ttl)
             if act == "ask":
                 last_ask_text = action["text"]
+        elif act == "search":
+            if not _web_search_available:
+                logging.warning("action=search, но web_search недоступен")
+                speak(cfg, "Модуль поиска не установлен.")
+                saw_conversational = True
+                continue
+            rtype, said = handle_search(
+                cfg, action["query"], action.get("open", False), client=client)
+            if rtype == "speak":
+                # голосовой ответ на поиск — диалог продолжается
+                saw_conversational = True
+                if _conv_available:
+                    conv.push_turn("assistant", said, ttl_seconds=ttl)
         else:
             # Неизвестный action — пропускаем, остальные исполняются
             logging.warning("LLM вернул неизвестный action: %r", act)

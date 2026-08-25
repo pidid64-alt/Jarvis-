@@ -143,6 +143,10 @@ LLM возвращает строгий JSON со СПИСКОМ действи�
 
 - несколько просьб в одной реплике → элементы массива в порядке произнесения,
   исполняются последовательно, каждое озвучивает свой ответ;
+- `{"action": "search", "query": "...", "open": bool}` — веб-поиск (`web_search.py`,
+  DuckDuckGo/ddgs без ключей): open=false → суммаризация free-LLM и голосовой
+  ответ (~1 запрос лимита), open=true → страница результатов в браузере
+  (`handle_search` в jarvis.py);
 - видит ТОЛЬКО id/tags/descriptions команд — поле `command` (shell) в промпт не попадает;
 - каждый элемент проверяется по whitelist (`_validate_action`), dangerous-командам
   форсируется подтверждение; несуществующий id посреди батча пропускается (не fallback —
@@ -192,6 +196,10 @@ Each script outputs concise text suitable for TTS. Common patterns:
 - `dockerstatus.sh`, `gitdirty.sh`, `failedservices.sh`, `recentlogs.sh`
 - `window_control.sh`, `browser_tab.sh`, `browser_zoom.sh` — X11 window/browser automation via xdotool/wmctrl
 - `discord_call.sh`, `discord_video_call.sh`, `discord_hangup.sh` — Discord automation
+- `solve_terminal.sh` — «реши проблему»: снимает текст активного терминала
+  (xdotool select-all/copy + xclip, хвост ~2500 символов) и печатает задачей
+  в Claude Code (сессия кодинга, при необходимости автозапуск). DRYRUN=1 —
+  план без действий. Нужен пакет `xclip`
 - `clipboard_ops.sh`, `file_ops.sh`, `network_ops.sh`, `system_info.sh` — grouped utilities
 
 ## Key Implementation Details

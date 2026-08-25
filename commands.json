@@ -4122,6 +4122,20 @@
       "command": "bash $HOME/jarvis/scripts/stop_coding_session.sh",
       "response": "Сессия кодинга завершена.",
       "speak_output": false
+    },
+    {
+      "id": "solve_terminal",
+      "phrases": [
+        "реши проблему",
+        "реши ошибку",
+        "исправь ошибку",
+        "исправь проблему в терминале"
+      ],
+      "command": "bash $HOME/jarvis/scripts/solve_terminal.sh",
+      "response": "Читаю терминал и передаю задачу Клоду.",
+      "speak_output": false,
+      "min_score": 0.8,
+      "timeout": 30
     }
   ]
 }

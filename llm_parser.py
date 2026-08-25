@@ -6,10 +6,11 @@ llm_parser.py
 LLM (OpenAI-совместимый API, OpenRouter).
 
 Ответ — СПИСОК действий (обычно из одного; несколько — когда пользователь
-попросил несколько вещей в одной реплике). Действие строго одного из трёх типов:
+попросил несколько вещей в одной реплике). Действие строго одного из четырёх типов:
   {"action": "command", "id": "<id команды>", "needs_confirmation": bool}
   {"action": "speak",   "text": "<что сказать голосом>"}
   {"action": "ask",     "text": "<уточняющий вопрос>"}
+  {"action": "search",  "query": "<тема поиска>", "open": bool}
 Принимаются и старый формат одиночного объекта, и массив без обёртки —
 всё нормализуется в список.
 
@@ -53,6 +54,12 @@ ACTION_SCHEMA = """{
 
 # ask — уточняющий вопрос для продолжения диалога:
 {"action": "ask", "text": "<вопрос>"}
+
+# search — найти информацию в интернете:
+# {"action": "search", "query": "<краткий поисковый запрос>", "open": true|false}
+# open=false — Джарвис сам прочитает выдачу и кратко ответит голосом.
+# open=true — откроется страница результатов в браузере (когда просят
+# открыть сайт/гайд/статью).
 """
 
 SYSTEM_PROMPT_TEMPLATE = """Ты — Jarvis, совершенный локальный голосовой ассистент. Твой стиль — вежливый, профессиональный, с легкой ноткой сдержанного остроумия, как у Джарвиса из фильмов.
@@ -74,6 +81,8 @@ SYSTEM_PROMPT_TEMPLATE = """Ты — Jarvis, совершенный локаль
 6. НЕСКОЛЬКО просьб в одной реплике («открой дискорд и какая погода») — верни массив actions с элементом на каждую просьбу, В ПОРЯДКЕ ПРОИЗНЕСЕНИЯ. Одна просьба — массив из одного элемента. Максимум 4 элемента, лишние просьбы игнорируй.
 
 7. Для команд с тегом "dangerous" (poweroff, reboot, logout, system_update) всегда ставь needs_confirmation=true.
+
+8. Если пользователь просит найти/поискать информацию о чём-то в интернете — верни элемент action=search: query — краткий поисковый запрос (2-5 слов), open=false для быстрого ответа голосом или open=true, если просят открыть сайт/статью/гайд в браузере.
 
 # Доступные команды
 {commands_block}
@@ -229,8 +238,20 @@ def _validate_action(action: dict, commands: list[dict]) -> dict:
         raise LLMError(f"ответ не dict: {type(action).__name__}")
 
     act = action.get("action")
-    if act not in ("command", "speak", "ask"):
+    if act not in ("command", "speak", "ask", "search"):
         raise LLMError(f"неизвестное action: {act!r}")
+
+    if act == "search":
+        query = action.get("query")
+        if not isinstance(query, str) or not query.strip():
+            raise LLMError("search: пустой query")
+        query = " ".join(query.strip().split())
+        if len(query) > 300:
+            query = query[:300]
+        open_browser = action.get("open")
+        if not isinstance(open_browser, bool):
+            open_browser = False
+        return {"action": "search", "query": query, "open": open_browser}
 
     if act == "command":
         cid = action.get("id")
