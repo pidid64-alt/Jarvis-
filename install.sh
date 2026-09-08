@@ -80,11 +80,31 @@ fi
 # 3. systemd --user юниты
 # ---------------------------------------------------------------------------
 echo "-> Ставлю systemd юниты..."
-mkdir -p "$HOME/.config/systemd/user"
+UNIT_DIR="$HOME/.config/systemd/user"
+# mkdir -p молча «успевает», если путь — файл или битый симлинк, и следующий
+# редирект падает с «Нет такого файла или каталога». Проверяем явно.
+for p in "$HOME/.config" "$HOME/.config/systemd" "$UNIT_DIR"; do
+    if [ -L "$p" ] && [ ! -d "$p" ]; then
+        echo "Ошибка: $p — битый симлинк (указывает в никуда)."
+        echo "Удали его: rm '$p'  — и запусти install.sh снова."
+        exit 1
+    fi
+    if [ -e "$p" ] && [ ! -d "$p" ]; then
+        echo "Ошибка: $p существует, но это не каталог."
+        echo "Убери/переименуй его и запусти install.sh снова."
+        exit 1
+    fi
+done
+mkdir -p "$UNIT_DIR"
+if [ ! -d "$UNIT_DIR" ] || [ ! -w "$UNIT_DIR" ]; then
+    echo "Ошибка: нет доступа на запись в $UNIT_DIR."
+    ls -ld "$HOME/.config" "$HOME/.config/systemd" "$UNIT_DIR" 2>&1 || true
+    exit 1
+fi
 # Шаблоны в systemd/ рассчитаны на ~/jarvis; подставляем реальный путь проекта
 # (клон часто лежит в ~/Jarvis- и т.п.). %h/.config/jarvis не трогаем.
 for unit in "$JARVIS_DIR"/systemd/*.service; do
-    dest="$HOME/.config/systemd/user/$(basename "$unit")"
+    dest="$UNIT_DIR/$(basename "$unit")"
     sed "s|%h/jarvis|$JARVIS_DIR|g" "$unit" > "$dest"
 done
 systemctl --user daemon-reload
@@ -114,7 +134,7 @@ WAKEWORD_MODEL="$JARVIS_DIR/models/wakeword/jarvis.tflite"
 if [ -f "$WAKEWORD_MODEL" ]; then
     echo "-> Нашёл модель wake-word, ставлю зависимости и юнит..."
     ./venv/bin/pip install --quiet openwakeword sounddevice numpy
-    cp "$JARVIS_DIR/systemd/jarvis-wakeword.service" "$HOME/.config/systemd/user/"
+    sed "s|%h/jarvis|$JARVIS_DIR|g" "$JARVIS_DIR/systemd/jarvis-wakeword.service" > "$UNIT_DIR/jarvis-wakeword.service"
     systemctl --user daemon-reload
     systemctl --user enable --now jarvis-wakeword.service
     echo "   Готово: слушает фоново на 'Джарвис', плюс Super+J как раньше."
