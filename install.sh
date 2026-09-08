@@ -25,16 +25,32 @@ fi
 # ---------------------------------------------------------------------------
 # 1. whisper.cpp
 # ---------------------------------------------------------------------------
+# Исходники не вендорятся. Пустой каталог часто остаётся после clone репозитория:
+# whisper.cpp был записан как gitlink (mode 160000) без .gitmodules, git создаёт
+# пустую папку, и проверка «каталог есть?» пропускала clone — cmake падал
+# с «does not appear to contain CMakeLists.txt».
 cd "$JARVIS_DIR"
-if [ ! -d "whisper.cpp" ]; then
+if [ ! -f "whisper.cpp/CMakeLists.txt" ]; then
     echo "-> Клонирую whisper.cpp..."
-    git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git
+    if [ -e "whisper.cpp" ]; then
+        echo "   Каталог whisper.cpp есть, но исходников нет — переклонирую."
+        rm -rf whisper.cpp
+    fi
+    git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git "$JARVIS_DIR/whisper.cpp"
 fi
-cd whisper.cpp
+if [ ! -f "whisper.cpp/CMakeLists.txt" ]; then
+    echo "Ошибка: не удалось получить исходники whisper.cpp (нет CMakeLists.txt)."
+    exit 1
+fi
+cd "$JARVIS_DIR/whisper.cpp"
 if [ ! -f "build/bin/whisper-server" ]; then
     echo "-> Собираю whisper.cpp (пара минут на слабом CPU)..."
-    cmake -B build -DCMAKE_BUILD_TYPE=Release
+    cmake -B build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_SERVER=ON
     cmake --build build -j "$(nproc)" --config Release
+fi
+if [ ! -f "build/bin/whisper-server" ]; then
+    echo "Ошибка: не собрался build/bin/whisper-server. Смотри вывод cmake выше."
+    exit 1
 fi
 cd "$JARVIS_DIR"
 
@@ -65,7 +81,12 @@ fi
 # ---------------------------------------------------------------------------
 echo "-> Ставлю systemd юниты..."
 mkdir -p "$HOME/.config/systemd/user"
-cp "$JARVIS_DIR"/systemd/*.service "$HOME/.config/systemd/user/"
+# Шаблоны в systemd/ рассчитаны на ~/jarvis; подставляем реальный путь проекта
+# (клон часто лежит в ~/Jarvis- и т.п.). %h/.config/jarvis не трогаем.
+for unit in "$JARVIS_DIR"/systemd/*.service; do
+    dest="$HOME/.config/systemd/user/$(basename "$unit")"
+    sed "s|%h/jarvis|$JARVIS_DIR|g" "$unit" > "$dest"
+done
 systemctl --user daemon-reload
 systemctl --user enable --now jarvis-whisper.service jarvis-piper.service
 echo "-> Жду, пока STT/TTS серверы поднимутся..."

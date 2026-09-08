@@ -50,8 +50,8 @@ Two independent wake methods: hotkey (Super+J) and wake-word ("Джарвис").
 # Full installation (idempotent)
 ./install.sh
 
-# Manual steps if needed:
-cd whisper.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
+# Manual steps if needed (install.sh clones whisper.cpp if CMakeLists.txt is missing):
+cd whisper.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_SERVER=ON && cmake --build build -j$(nproc)
 ./venv/bin/pip install --quiet "piper-tts[http]" requests webrtcvad-wheels
 ```
 
