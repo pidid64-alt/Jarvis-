@@ -21,7 +21,10 @@ import argparse
 import difflib
 import json
 import logging
+import math
 import os
+import re
+import selectors
 import signal
 import subprocess
 import sys
@@ -29,6 +32,9 @@ import threading
 import time
 import urllib.parse
 from pathlib import Path
+
+import inbox_store
+from recognition import SpeechBuffer, command_text, has_negation, normalize_text, phrase_spans
 
 try:
     import requests
@@ -97,7 +103,12 @@ DEFAULT_CONFIG = {
     "language": "ru",
     "sample_rate": 16000,
     "record_seconds": 4,
-    "match_threshold": 0.6,
+    "match_threshold": 0.72,
+    "match_ambiguity_margin": 0.06,
+    "vad_start_speech_seconds": 0.09,
+    "vad_min_speech_seconds": 0.18,
+    "stt_prompt": "",
+    "stt_no_speech_threshold": 0.6,
     # Быстрый путь без LLM: если слов вне найденных точных фраз не больше
     # этого числа — команды исполняются локально и мгновенно.
     "exact_max_extra_words": 6,
@@ -276,7 +287,7 @@ def record_audio_fixed(cfg: dict, path: Path):
 def record_audio_vad(cfg: dict, path: Path) -> bool:
     """
     Запись с VAD: ждём начала речи, пишем до vad_silence_seconds тишины
-    после неё, но дольше max_record_seconds. Возвращает False, если
+    после неё, но не дольше max_record_seconds. Возвращает False, если
     речь так и не началась за vad_wait_speech_seconds.
 
     PCM читается напрямую из stdout parecord (--raw), кадры по 30мс
@@ -302,44 +313,49 @@ def record_audio_vad(cfg: dict, path: Path) -> bool:
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
-    from collections import deque
-    preroll = deque(maxlen=preroll_frames)
-    voiced = bytearray()
-    speech_started = False
-    silence_run = 0
+    buffer = SpeechBuffer(
+        start_frames=math.ceil(cfg.get("vad_start_speech_seconds", 0.09) * 1000 / frame_ms),
+        min_frames=math.ceil(cfg.get("vad_min_speech_seconds", 0.18) * 1000 / frame_ms),
+        silence_frames=silence_frames_limit,
+        preroll_frames=preroll_frames,
+    )
     frames_total = 0
-
+    pending = bytearray()
+    # A stalled audio device must not hold the daemon's processing lock forever.
+    deadline = time.monotonic() + cfg["max_record_seconds"]
+    selector = selectors.DefaultSelector()
     try:
+        selector.register(proc.stdout, selectors.EVENT_READ)
         while frames_total < max_frames:
-            frame = proc.stdout.read(frame_bytes)
-            if not frame or len(frame) < frame_bytes:
-                logging.warning("parecord оборвался во время записи")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not selector.select(timeout=min(remaining, 1.0)):
                 break
+            chunk = os.read(proc.stdout.fileno(), frame_bytes - len(pending))
+            if not chunk:
+                break
+            pending.extend(chunk)
+            if len(pending) < frame_bytes:
+                continue
+            frame = bytes(pending)
+            pending.clear()
             frames_total += 1
-            is_speech = vad.is_speech(frame, rate)
-
-            if not speech_started:
-                preroll.append(frame)
-                if is_speech:
-                    speech_started = True
-                    voiced.extend(b"".join(preroll))
-                elif frames_total >= wait_frames:
-                    break  # речь так и не началась
-            else:
-                voiced.extend(frame)
-                silence_run = 0 if is_speech else silence_run + 1
-                if silence_run >= silence_frames_limit:
-                    break
+            if buffer.feed(frame, vad.is_speech(frame, rate)):
+                break
+            if not buffer.started and frames_total >= wait_frames:
+                break
     finally:
+        selector.close()
         proc.terminate()
         try:
             proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             proc.kill()
+            proc.wait()
+        proc.stdout.close()
 
-    if not speech_started:
+    if not buffer.valid:
         return False
-    write_wav(path, bytes(voiced), rate)
+    write_wav(path, bytes(buffer.audio), rate)
     return True
 
 
@@ -359,13 +375,23 @@ def transcribe(cfg: dict, path: Path) -> str:
         data = {
             "language": cfg["language"],
             "response_format": "json",
-            "no_speech_thold": "0.6",
+            "no_speech_thold": str(cfg.get("stt_no_speech_threshold", 0.6)),
+            "temperature": "0.0",
+            "temperature_inc": "0.0",
         }
+        if cfg.get("stt_prompt"):
+            data["prompt"] = cfg["stt_prompt"][:500]
         resp = requests.post(
             cfg["whisper_url"], files=files, data=data, timeout=cfg["http_timeout"]
         )
     resp.raise_for_status()
-    return resp.json().get("text", "").strip()
+    text = resp.json().get("text", "")
+    if not isinstance(text, str):
+        return ""
+    # Common non-speech captions; never pass them to command matching.
+    if normalize_text(text) in {"музыка", "аплодисменты", "тишина", "субтитры"}:
+        return ""
+    return text.strip()
 
 
 def speak(cfg: dict, text: str):
@@ -396,57 +422,46 @@ def speak(cfg: dict, text: str):
 # ---------------------------------------------------------------------------
 
 
-def match_command(text: str, commands: list, threshold: float):
+def match_command(text: str, commands: list, threshold: float,
+                  ambiguity_margin: float = 0.06):
+    """Boundary-aware exact matching, then conservative per-command fuzzy ranking.
+
+    Similar runner-up = no execution. Dangerous commands are exact-only and
+    still require confirmation at execution time. Negations go to the LLM.
     """
-    Сопоставляет распознанный текст с белым списком.
-
-    Среди всех фраз, целиком встретившихся внутри сказанного, выбирается
-    САМАЯ ДЛИННАЯ/специфичная, а не первая попавшаяся по порядку в
-    commands.json — иначе общая фраза одной команды может "проглотить"
-    более специфичную фразу другой (например "есть обновления" внутри
-    "есть обновления из аур" перебивало бы аур-специфичную команду).
-
-    Если полного совпадения нет — fuzzy-скор, но только если в сказанном
-    НЕ МЕНЬШЕ слов, чем в целевой фразе (отсекает обрубленные команды
-    без объекта, вроде голого "перезагрузи").
-
-    cmd["min_score"] — свой (обычно повышенный) порог для конкретной
-    команды поверх общего match_threshold.
-    """
-    text_norm = text.lower().strip()
-    if not text_norm:
+    text_norm = command_text(text)
+    if not text_norm or has_negation(text_norm):
         return None, 0.0
-    text_word_count = len(text_norm.split())
-
-    exact_cmd, exact_len = None, -1
-    fuzzy_cmd, fuzzy_score = None, 0.0
-
+    exact = []
+    ranked = []
     for cmd in commands:
-        cmd_threshold = cmd.get("min_score", threshold)
+        best = 0.0
         for phrase in cmd.get("phrases", []):
-            phrase_norm = phrase.lower().strip()
+            phrase_norm = normalize_text(phrase)
             if not phrase_norm:
                 continue
-
-            if phrase_norm in text_norm:
-                if len(phrase_norm) > exact_len:
-                    exact_len, exact_cmd = len(phrase_norm), cmd
+            if any(phrase_spans(text_norm, phrase_norm)):
+                exact.append((len(phrase_norm), cmd))
                 continue
-
-            if text_word_count < len(phrase_norm.split()):
-                # сказано меньше слов, чем в целевой фразе — похоже на
-                # обрубленную команду без объекта, не считаем совпадением
+            if cmd.get("confirm") or "dangerous" in cmd.get("tags", []):
                 continue
-
-            score = difflib.SequenceMatcher(None, text_norm, phrase_norm).ratio()
-            if score >= cmd_threshold and score > fuzzy_score:
-                fuzzy_score, fuzzy_cmd = score, cmd
-
-    if exact_cmd is not None:
-        return exact_cmd, 1.0
-    if fuzzy_cmd is not None:
-        return fuzzy_cmd, fuzzy_score
-    return None, fuzzy_score
+            if len(text_norm.split()) < len(phrase_norm.split()):
+                continue
+            best = max(best, difflib.SequenceMatcher(
+                None, text_norm, phrase_norm, autojunk=False).ratio())
+        ranked.append((best, cmd))
+    if exact:
+        exact.sort(key=lambda pair: pair[0], reverse=True)
+        tied = {c.get("id") for length, c in exact if length == exact[0][0]}
+        return (exact[0][1], 1.0) if len(tied) == 1 else (None, 1.0)
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    if not ranked:
+        return None, 0.0
+    score, cmd = ranked[0]
+    runner_up = next((v for v, c in ranked[1:] if c.get("id") != cmd.get("id")), 0)
+    if score < cmd.get("min_score", threshold) or score - runner_up < ambiguity_margin:
+        return None, score
+    return cmd, score
 
 
 def match_commands_exact(text: str, commands: list, max_extra_words: int) -> list:
@@ -462,26 +477,27 @@ def match_commands_exact(text: str, commands: list, max_extra_words: int) -> lis
     max_extra_words, реплика считается не-командной (болтовня, где случайно
     мелькнула команда) и возвращается пустой список — её разберёт LLM.
     """
-    text_norm = text.lower().strip()
-    if not text_norm:
+    text_norm = normalize_text(text)
+    if not text_norm or has_negation(text_norm):
         return []
 
     candidates = []  # (start, end, длина фразы, cmd)
     for cmd in commands:
         for phrase in cmd.get("phrases", []):
-            phrase_norm = phrase.lower().strip()
+            phrase_norm = normalize_text(phrase)
             if not phrase_norm:
                 continue
-            start = 0
-            while True:
-                idx = text_norm.find(phrase_norm, start)
-                if idx == -1:
-                    break
-                candidates.append(
-                    (idx, idx + len(phrase_norm), len(phrase_norm), cmd))
-                start = idx + 1
+            for start, end in phrase_spans(text_norm, phrase_norm):
+                candidates.append((start, end, len(phrase_norm), cmd))
 
     if not candidates:
+        return []
+
+    # The same phrase assigned to different IDs is ambiguous, not file order.
+    spans = {}
+    for start, end, _, cmd in candidates:
+        spans.setdefault((start, end), set()).add(cmd.get("id"))
+    if any(len(ids) > 1 for ids in spans.values()):
         return []
 
     # жадный выбор непересекающихся вхождений, от самой длинной фразы
@@ -504,14 +520,45 @@ def match_commands_exact(text: str, commands: list, max_extra_words: int) -> lis
 
     # лимит «лишних» слов вне командных фраз
     words_total = len(text_norm.split())
-    matched_words = sum(len(text_norm[s:e].split()) for s, e, _ in picked)
+    matched_words = sum(len(text_norm[s:e].split()) for s, e, _ in chosen)
     extra = words_total - matched_words
     if extra > max_extra_words:
         logging.debug("exact fast-path: %d лишних слов > %d — передаю в LLM",
                       extra, max_extra_words)
         return []
 
+    # Never swallow a second, unrecognized request after one exact command.
+    remainder = list(text_norm)
+    for start, end, _ in chosen:
+        remainder[start:end] = " " * (end - start)
+    fillers = {"джарвис", "jarvis", "пожалуйста", "а", "и", "потом", "затем",
+               "скажи", "ну", "будет"}
+    if set("".join(remainder).split()) - fillers or len(picked) > 4:
+        return []
     return [cmd for _, _, cmd in picked]
+
+
+def match_commands_local(text: str, commands: list, threshold: float,
+                         ambiguity_margin: float = 0.06) -> list:
+    """Offline fuzzy multi-command plan. Resolve ALL clauses before executing any."""
+    if has_negation(text):
+        return []
+    clauses = re.split(r"\b(?:и затем|и потом|а потом|а затем|затем|потом|и)\b",
+                       normalize_text(text))
+    if len(clauses) > 4 or any(not clause.strip() for clause in clauses):
+        return []
+    plan = []
+    seen = set()
+    for clause in clauses:
+        cmd, score = match_command(clause, commands, threshold, ambiguity_margin)
+        if cmd is None:
+            return []
+        if score == 1.0 and not match_commands_exact(clause, commands, 6):
+            return []
+        if cmd.get("id") not in seen:
+            seen.add(cmd.get("id"))
+            plan.append((cmd, score))
+    return plan
 
 
 def run_background(cfg: dict, cmd: dict):
@@ -571,9 +618,9 @@ def ask_confirmation(cfg: dict, cmd: dict) -> bool:
         speak(cfg, "Не могу распознать ответ, отменяю.")
         return False
 
-    answer_norm = answer.lower().strip().strip(".,!?…")
+    answer_norm = normalize_text(answer)
     logging.info("Ответ на подтверждение: %r", answer)
-    if answer_norm in CONFIRM_YES or answer_norm.startswith("да"):
+    if answer_norm in {normalize_text(x) for x in CONFIRM_YES}:
         return True
     speak(cfg, "Отменяю.")
     return False
@@ -582,7 +629,7 @@ def ask_confirmation(cfg: dict, cmd: dict) -> bool:
 def handle_command(cfg: dict, cmd: dict, score: float):
     logging.info("Выполняю: %s (score=%.2f)", cmd.get("id"), score)
 
-    if cmd.get("confirm") and not ask_confirmation(cfg, cmd):
+    if (cmd.get("confirm") or "dangerous" in cmd.get("tags", [])) and not ask_confirmation(cfg, cmd):
         logging.info("Команда %s не подтверждена, отмена", cmd.get("id"))
         notify("Jarvis", f"Отменено: {cmd.get('id')}")
         return
@@ -762,15 +809,16 @@ def handle_voice_command(cfg: dict) -> bool:
     if action_type:
         return action_type in ("speak", "ask")
 
-    cmd, score = match_command(text, commands, cfg["match_threshold"])
-
-    if cmd is None:
-        logging.info("Нет совпадений (best score=%.2f) для %r", score, text)
+    plan = match_commands_local(text, commands, cfg["match_threshold"],
+                                cfg.get("match_ambiguity_margin", 0.06))
+    if not plan:
+        logging.info("Нет однозначного локального плана для %r", text)
         notify("Jarvis", f"Не понял: {text}")
-        speak(cfg, "Такой команды не знаю.")
+        speak(cfg, "Не уверен, что правильно понял. Повтори команду точнее.")
         return False
 
-    handle_command(cfg, cmd, score)
+    for cmd, score in plan:
+        handle_command(cfg, cmd, score)
     return False
 
 
@@ -940,43 +988,26 @@ INBOX_CHECK_INTERVAL = 120  # секунд между проверками inbox
 
 
 def drain_inbox(cfg: dict) -> int:
-    """Забирает записи из inbox.json (от autonomy.py) и озвучивает.
-
-    Возвращает количество обработанных записей. Файл удаляется
-    только если удалось прочитать и распарсить — никакой потери.
-    """
+    """Speak one message, then acknowledge its ID without losing concurrent writes."""
     if not INBOX_FILE.exists():
         return 0
     try:
-        data = json.loads(INBOX_FILE.read_text(encoding="utf-8"))
+        from autonomy import in_quiet_hours, load_autonomy_config
+        if in_quiet_hours(load_autonomy_config().get("quiet_hours")):
+            return 0
+        item = inbox_store.peek(INBOX_FILE)
+        if item is None:
+            return 0
+        text = (item.get("text") or "").strip()
+        if text:
+            logging.info("inbox: сообщение от %s", item.get("source", "autonomy"))
+            notify("Jarvis — состояние системы", text)
+            speak(cfg, text)
+        inbox_store.acknowledge(INBOX_FILE, item["id"])
+        return int(bool(text))
     except Exception:
-        logging.exception("inbox: битый файл, не трогаю")
+        logging.exception("inbox: не удалось обработать сообщение; сохраняю для повтора")
         return 0
-    if not isinstance(data, list) or not data:
-        return 0
-    # Берём первую запись, остальные оставляем
-    item = data[0]
-    text = (item.get("text") or "").strip()
-    if not text:
-        # пустые пропускаем — перезаписываем файл с пустым списком
-        try:
-            INBOX_FILE.write_text(json.dumps(data[1:], ensure_ascii=False),
-                                   encoding="utf-8")
-        except Exception:
-            pass
-        return 0
-    src = item.get("source", "autonomy")
-    logging.info("inbox: сообщение от %s", src)
-    speak(cfg, text)
-    # атомарно обновим файл — убираем обработанную запись
-    try:
-        tmp = INBOX_FILE.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data[1:], ensure_ascii=False),
-                        encoding="utf-8")
-        tmp.replace(INBOX_FILE)
-    except Exception:
-        logging.exception("inbox: не удалось обновить файл")
-    return 1
 
 
 def on_signal(signum, frame):

@@ -35,6 +35,8 @@
     },
     {
       "id": "disk_space",
+      "autonomy_safe": true,
+      "autonomy_command": "python3 $HOME/jarvis/health_checks.py disk_space",
       "phrases": [
         "сколько места на диске",
         "свободное место",
@@ -202,6 +204,8 @@
     },
     {
       "id": "cpu_temp",
+      "autonomy_safe": true,
+      "autonomy_command": "python3 $HOME/jarvis/health_checks.py cpu_temp",
       "phrases": [
         "температура процессора",
         "горячий ли процессор",
@@ -234,6 +238,8 @@
     },
     {
       "id": "battery_status",
+      "autonomy_safe": true,
+      "autonomy_command": "python3 $HOME/jarvis/health_checks.py battery_status",
       "phrases": [
         "заряд батареи",
         "сколько заряда",
@@ -327,6 +333,7 @@
     },
     {
       "id": "internet_check",
+      "autonomy_safe": true,
       "phrases": [
         "есть ли интернет",
         "проверь интернет",
@@ -465,6 +472,7 @@
     },
     {
       "id": "check_updates",
+      "autonomy_safe": true,
       "phrases": [
         "есть обновления",
         "проверь обновления",
@@ -657,6 +665,7 @@
     },
     {
       "id": "failed_services",
+      "autonomy_safe": true,
       "phrases": [
         "есть сломанные сервисы",
         "покажи сломанные сервисы",
@@ -680,6 +689,7 @@
     },
     {
       "id": "journal_errors",
+      "autonomy_safe": true,
       "phrases": [
         "покажи ошибки в логах",
         "недавние ошибки системы",
@@ -1293,6 +1303,8 @@
     },
     {
       "id": "memory_usage",
+      "autonomy_safe": true,
+      "autonomy_command": "python3 $HOME/jarvis/health_checks.py memory_usage",
       "phrases": [
         "сколько памяти используется",
         "использование памяти",

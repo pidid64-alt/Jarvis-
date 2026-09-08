@@ -3,13 +3,15 @@
 autonomy.py
 -----------
 Фоновый процесс, который по расписанию (autonomy.json) опрашивает
-read-only скрипты и через LLM решает, стоит ли оповестить пользователя.
-Если да — пишет запись в STATE_DIR/inbox.json, откуда её заберёт
+read-only проверки. Пороги оцениваются локально; LLM опционален для
+пользовательских правил без явного условия.
+При обнаружении проблемы пишет запись в STATE_DIR/inbox.json, откуда её заберёт
 jarvis.py на idle-цикле.
 
 Безопасность: autonomy.py НЕ выполняет произвольные shell-команды.
 Имена check — это id команд из commands.json, и для каждого id он
-достаёт статическую shell-команду whitelist. Никаких инъекций.
+достаёт статическую shell-команду с autonomy_safe: true. Опасные команды
+и команды с подтверждением запрещены даже при наличии этого флага.
 
 Использование:
   autonomy.py            демон (тик раз в минуту)
@@ -17,14 +19,20 @@ jarvis.py на idle-цикле.
 """
 
 import argparse
+import fcntl
+import hashlib
 import json
 import logging
+import math
 import os
+import re
 import subprocess
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+import inbox_store
 
 BASE_DIR = Path(__file__).resolve().parent
 STATE_DIR = Path.home() / ".local" / "share" / "jarvis"
@@ -33,38 +41,20 @@ INBOX_FILE = STATE_DIR / "inbox.json"
 AUTONOMY_CONFIG = BASE_DIR / "autonomy.json"
 MAIN_CONFIG = BASE_DIR / "config.json"
 COMMANDS_FILE = BASE_DIR / "commands.json"
+SCHEDULE_FILE = STATE_DIR / "autonomy_state.json"
 
-# Глобальный кэш: id команды -> shell-команда. Заполняется при старте.
-_COMMAND_LOOKUP: dict[str, str] = {}
-
-
+# Only explicitly audited commands may run unattended. speak_output is NOT a
+# safety property: mutating commands can print output too.
 def load_command_lookup() -> dict[str, str]:
-    """Возвращает {id: command} только для команд с speak_output или
-    чисто read-only скриптов. autonomy.py использует это для выполнения
-    решений check_* — никогда не для произвольных действий."""
-    if _COMMAND_LOOKUP:
-        return _COMMAND_LOOKUP
     try:
-        with open(COMMANDS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
+        data = json.loads(COMMANDS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         logging.exception("autonomy: не удалось прочитать commands.json")
         return {}
-
-    for cmd in data.get("commands", []):
-        cid = cmd.get("id", "")
-        shell = cmd.get("command", "")
-        if not cid or not shell or shell == "true":
-            continue
-        # ВАЖНО: autonomy.py выполняет только эти whitelist shell-команды.
-        # Никаких пользовательских вставок сюда не попадает.
-        _COMMAND_LOOKUP[cid] = shell
-    return _COMMAND_LOOKUP
-
-
-def expand_vars(text: str) -> str:
-    """Только $HOME и $USER — остальные переменные оставляем для shell."""
-    return text.replace("$HOME", str(Path.home())).replace("$USER", os.environ.get("USER", ""))
+    return {cmd["id"]: cmd.get("autonomy_command", cmd["command"])
+            for cmd in data.get("commands", [])
+            if cmd.get("autonomy_safe") is True and cmd.get("command")
+            and not cmd.get("confirm") and "dangerous" not in cmd.get("tags", [])}
 
 
 def load_autonomy_config() -> dict:
@@ -79,10 +69,6 @@ def load_main_config() -> dict:
         return {}
     with open(MAIN_CONFIG, "r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def now_str() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def in_quiet_hours(quiet: dict | None) -> bool:
@@ -113,7 +99,10 @@ def run_check(check_id: str, timeout: int = 30) -> str:
         result = subprocess.run(
             shell, shell=True, capture_output=True, text=True, timeout=timeout
         )
-        out = (result.stdout or result.stderr or "").strip()
+        if result.returncode != 0:
+            logging.warning("autonomy: %s завершился с кодом %s", check_id, result.returncode)
+            return ""
+        out = (result.stdout or "").strip()
         return out[:2000]  # ограничиваем, чтоб LLM не получил портянку
     except subprocess.TimeoutExpired:
         logging.warning("autonomy: %s превысил таймаут %ds", check_id, timeout)
@@ -123,149 +112,205 @@ def run_check(check_id: str, timeout: int = 30) -> str:
         return ""
 
 
-def should_filter_locally(rule: dict, raw_output: str) -> bool:
-    """Простые локальные фильтры до LLM — экономим обращения."""
-    if "if_above" in rule:
-        try:
-            # вытаскиваем первое число из вывода
-            num = float("".join(c for c in raw_output if c.isdigit() or c == ".").strip(".") or "0")
-            if num <= rule["if_above"]:
-                return True
-        except (ValueError, TypeError):
-            pass
-    if "if_below_percent" in rule:
-        try:
-            num = float("".join(c for c in raw_output if c.isdigit() or c == ".").strip(".") or "100")
-            if num >= rule["if_below_percent"]:
-                return True
-        except (ValueError, TypeError):
-            pass
+def parse_check_output(raw_output: str) -> tuple[str, dict]:
+    """Structured metrics are unambiguous; legacy scripts still return prose."""
+    try:
+        data = json.loads(raw_output)
+    except ValueError:
+        return raw_output.strip(), {}
+    if not isinstance(data, dict) or data.get("error"):
+        return "", {}
+    metrics = data.get("metrics", {})
+    text = data.get("text", "")
+    return (text if isinstance(text, str) else "",
+            metrics if isinstance(metrics, dict) else {})
+
+
+def local_decision(rule: dict, raw_output: str) -> bool | None:
+    """True=known alert, False=healthy/unknown metric, None=needs interpretation.
+
+    Never join all numbers in prose (disk sizes, dates and percentages differ).
+    Threshold rules require a named structured metric and fail closed if absent.
+    """
+    text, metrics = parse_check_output(raw_output)
+    if not text:
+        return False
+    if rule.get("only_if_on_battery") and metrics.get("on_battery") is not True:
+        return False
+    for pattern in rule.get("skip_patterns", []):
+        if re.search(pattern, text, re.IGNORECASE):
+            return False
+    tests = []
+    for key, compare in (("if_above", lambda a, b: a > b),
+                         ("if_above_percent", lambda a, b: a > b),
+                         ("if_below_percent", lambda a, b: a < b)):
+        if key not in rule:
+            continue
+        value = metrics.get(rule.get("metric"))
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return False
+        tests.append(compare(value, float(rule[key])))
     if "if_equals" in rule:
-        if rule["if_equals"] not in raw_output:
-            return True
-    if rule.get("if_changed"):
-        # пустой результат = состояние не изменилось
-        if not raw_output:
-            return True
+        tests.append(text.strip() == rule["if_equals"])
     if "has_keywords" in rule:
-        if not any(kw.lower() in raw_output.lower() for kw in rule["has_keywords"]):
+        tests.append(any(kw.casefold() in text.casefold() for kw in rule["has_keywords"]))
+    if "notify_pattern" in rule:
+        tests.append(bool(re.search(rule["notify_pattern"], text, re.IGNORECASE)))
+    return all(tests) if tests else None
+
+
+def should_filter_locally(rule: dict, raw_output: str) -> bool:
+    return local_decision(rule, raw_output) is False
+
+
+def decide_via_llm(rule: dict, raw_output: str, llm_client, parser=None) -> dict:
+    from llm_parser import parse_notification_decision
+    return parse_notification_decision(llm_client, rule.get("prompt", ""), raw_output)
+
+
+def append_inbox(text: str, source: str = "autonomy"):
+    inbox_store.append(INBOX_FILE, text, source)
+
+
+def load_schedule() -> dict:
+    try:
+        data = json.loads(SCHEDULE_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("rules"), dict):
+            return data
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError):
+        logging.exception("autonomy: повреждено состояние расписания")
+    return {"rules": {}, "last_notify": 0}
+
+
+def rule_due(rule: dict, previous: dict, now: float) -> bool:
+    if rule.get("enabled", True) is False:
+        return False
+    last = previous.get("last_run", 0)
+    if "every_minutes" in rule:
+        if now - last >= max(1, float(rule["every_minutes"])) * 60 or now < last:
+            return True
+    if "time" in rule:
+        today = datetime.fromtimestamp(now)
+        scheduled = datetime.strptime(rule["time"], "%H:%M").time()
+        # Catch up after sleep/restart instead of requiring an exact minute.
+        last_date = datetime.fromtimestamp(last).date() if last else None
+        if today.time() >= scheduled and last_date != today.date():
             return True
     return False
 
 
-def decide_via_llm(rule: dict, raw_output: str, llm_client, parser) -> dict:
-    """Отдаёт результат в LLM, получает решение skip/notify."""
-    from llm_parser import parse_notification_decision
-    return parse_notification_decision(llm_client, rule["prompt"], raw_output)
+def process_rule(rule: dict, llm_client, parser, state: dict,
+                 min_interval: float = 300, force: bool = False):
+    """Run every due check regardless of notification cooldown; queue its alert.
 
-
-def append_inbox(text: str, source: str = "autonomy"):
-    """Атомарно добавляет запись в inbox.json."""
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    inbox = []
-    if INBOX_FILE.exists():
-        try:
-            inbox = json.loads(INBOX_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            inbox = []
-    inbox.append({
-        "ts": time.time(),
-        "source": source,
-        "text": text,
-    })
-    # не держим больше 50 записей
-    if len(inbox) > 50:
-        inbox = inbox[-50:]
-    tmp = INBOX_FILE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(inbox, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(INBOX_FILE)
-
-
-def process_rule(rule: dict, llm_client, parser, last_run: dict,
-                 min_interval: float):
-    """Один проход по правилу: проверить, пора ли, выполнить, решить."""
-    rid = rule.get("id", "?")
+    min_interval is retained for caller compatibility; delivery throttling belongs
+    in flush_pending, never before the checks (which used to starve later rules).
+    """
+    if rule.get("enabled", True) is False:
+        return
+    rid = rule["id"]
+    previous = state.setdefault("rules", {}).setdefault(rid, {})
     now = time.time()
-    last = last_run.get(rid, 0)
-
-    # Вычисляем, пора ли
-    due = False
-    if "every_minutes" in rule:
-        if now - last >= rule["every_minutes"] * 60:
-            due = True
-    if "time" in rule:
-        # раз в минуту проверка HH:MM
-        if datetime.now().strftime("%H:%M") == rule["time"] and (now - last) > 60:
-            due = True
-
-    if not due:
+    if not force and not rule_due(rule, previous, now):
         return
-
-    # Ограничение частоты — между двумя policy.notify не меньше min_interval
-    if (now - last_run.get("__last_notify", 0)) < min_interval:
-        logging.debug("autonomy: %s — подавлено, недавно был notify", rid)
-        last_run[rid] = now
+    previous["last_run"] = now
+    raw = run_check(rule["check"], timeout=rule.get("timeout_seconds", 30))
+    text, _ = parse_check_output(raw)
+    if not text:
+        # An unavailable sensor must not leave an old pending warning queued.
+        previous.pop("pending", None)
         return
-
-    last_run[rid] = now
-    logging.info("autonomy: запуск правила %s", rid)
-
-    raw = run_check(rule["check"])
-    if not raw:
-        logging.debug("autonomy: %s — пустой результат, skip", rid)
+    local = local_decision(rule, raw)
+    if local is False:
+        previous.pop("pending", None)
+        previous.pop("notified_digest", None)  # recovery rearms the alert
         return
-
-    if should_filter_locally(rule, raw):
-        logging.debug("autonomy: %s — отфильтровано локально (skip LLM)", rid)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    unchanged = previous.get("notified_digest") == digest
+    repeat = max(0, float(rule.get("repeat_seconds", 21600)))
+    if unchanged and (rule.get("if_changed") or now - previous.get("last_notified", 0) < repeat):
+        previous.pop("pending", None)
         return
-
-    if not llm_client:
-        # LLM недоступен — не сообщаем (без подтверждения не пишем в inbox)
-        logging.debug("autonomy: %s — LLM недоступен, skip notify", rid)
+    # Threshold alerts have a stable cooldown even when readings fluctuate.
+    if not rule.get("if_changed") and now - previous.get("last_notified", 0) < repeat:
+        previous.pop("pending", None)
         return
+    if local is True:
+        decision = {"action": "notify", "text": text}
+    elif llm_client:
+        try:
+            decision = decide_via_llm(rule, raw, llm_client, parser)
+        except Exception:
+            logging.exception("autonomy: %s — LLM недоступен", rid)
+            return
+    else:
+        return  # no reliable local condition: do not guess without LLM
+    if decision.get("action") == "notify" and decision.get("text", "").strip():
+        pending = previous.get("pending", {})
+        previous["pending"] = {"text": decision["text"].strip()[:1000], "digest": digest,
+                               "queued_at": pending.get("queued_at", now)}
+    else:
+        previous.pop("pending", None)
 
+
+def flush_pending(state: dict, cfg: dict) -> int:
+    """Deliver the oldest pending alert, respecting global cooldown and quiet hours."""
+    if in_quiet_hours(cfg.get("quiet_hours")):
+        return 0
+    now = time.time()
+    if now - state.get("last_notify", 0) < float(cfg.get("min_notify_interval_seconds", 300)):
+        return 0
+    enabled = {r["id"] for r in cfg.get("rules", []) if r.get("enabled", True)}
+    pending = [(v["pending"]["queued_at"], rid, v) for rid, v in state.get("rules", {}).items()
+               if rid in enabled and v.get("pending")]
+    if not pending:
+        return 0
+    _, rid, previous = min(pending, key=lambda row: (row[0], row[1]))
+    item = previous["pending"]
+    append_inbox(item["text"], source=rid)
+    previous["notified_digest"] = item["digest"]
+    previous["last_notified"] = now
+    previous.pop("pending")
+    state["last_notify"] = now
+    logging.info("autonomy: %s → notify", rid)
+    return 1
+
+
+def run_tick(cfg: dict, llm_client, parser, state: dict, force=False):
+    for rule in cfg.get("rules", []):
+        try:
+            process_rule(rule, llm_client, parser, state, force=force)
+        except Exception:
+            logging.exception("autonomy: ошибка в правиле %s", rule.get("id", "?"))
     try:
-        decision = decide_via_llm(rule, raw, llm_client, parser)
-    except Exception as e:
-        logging.warning("autonomy: %s — LLM decision failed: %s", rid, e)
-        return
+        flush_pending(state, cfg)
+    finally:
+        # Preserve completed checks and pending alerts even if the inbox is
+        # temporarily unwritable or corrupt. Retry delivery on the next tick.
+        inbox_store.atomic_write(SCHEDULE_FILE, state)
 
-    if decision.get("action") == "notify":
-        text = decision.get("text", "")
-        if text:
-            append_inbox(text, source=rid)
-            logging.info("autonomy: %s → notify: %s", rid, text[:80])
-            last_run["__last_notify"] = now
+
+def scheduled_tick(llm_client, parser=None, force=False):
+    """Serialize daemon and --once runs; always reload persisted state under lock."""
+    SCHEDULE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with SCHEDULE_FILE.with_suffix(".lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            logging.info("autonomy: другой процесс уже выполняет проверки")
+            return
+        run_tick(load_autonomy_config(), llm_client, parser, load_schedule(), force=force)
 
 
 def run_loop(llm_client, parser, debug: bool):
-    cfg = load_autonomy_config()
-    rules = cfg.get("rules", [])
-    quiet = cfg.get("quiet_hours")
-    min_interval = float(cfg.get("min_notify_interval_seconds", 300))
-
-    # Отметки последнего запуска (в памяти, не на диске — autonomy.py
-    # стартует заново при рестарте сервиса, рестарт разрешён раз в минуту)
-    last_run: dict = {}
-
-    logging.info("autonomy: запущен, %d правил, quiet_hours=%s",
-                 len(rules), bool(quiet))
-
-    tick = 0
+    logging.info("autonomy: запущен; локальные проверки доступны без LLM")
     while True:
-        tick += 1
-        if in_quiet_hours(quiet):
-            logging.debug("autonomy: quiet hours, всё skip")
-        else:
-            for rule in rules:
-                try:
-                    process_rule(rule, llm_client, parser, last_run, min_interval)
-                except Exception:
-                    logging.exception("autonomy: ошибка в правиле %s",
-                                      rule.get("id", "?"))
-        # тик раз в 60 секунд
-        if not debug and tick % 60 != 0:
-            pass
+        try:
+            scheduled_tick(llm_client, parser)
+        except Exception:
+            logging.exception("autonomy: ошибка цикла, повтор через минуту")
         time.sleep(60)
 
 
@@ -287,16 +332,15 @@ def main():
         handlers=handlers,
     )
 
-    # LLM-клиент — опциональный. Без него autonomy.py работает, но
-    # решения LLM не запрашивает (только локальные фильтры).
+    # LLM only interprets custom rules without deterministic local conditions.
     llm_client = None
     parser_fn = None
     main_cfg = load_main_config()
     llm_cfg = main_cfg.get("llm", {})
-    if llm_cfg.get("enabled") and llm_cfg.get("model"):
+    api_key = os.environ.get(llm_cfg.get("api_key_env", "OPENROUTER_API_KEY"), "")
+    if llm_cfg.get("enabled") and llm_cfg.get("model") and api_key:
         try:
             from llm_client import LLMClient
-            api_key = os.environ.get(llm_cfg.get("api_key_env", "OMNIROUTE_API_KEY"), "")
             llm_client = LLMClient(
                 base_url=llm_cfg["base_url"],
                 api_key=api_key,
@@ -308,14 +352,7 @@ def main():
             logging.exception("autonomy: LLM-клиент не создан, работаю без LLM")
 
     if args.once:
-        cfg = load_autonomy_config()
-        rules = cfg.get("rules", [])
-        last_run: dict = {}
-        for rule in rules:
-            try:
-                process_rule(rule, llm_client, parser_fn, last_run, 0)
-            except Exception:
-                logging.exception("autonomy: %s", rule.get("id"))
+        scheduled_tick(llm_client, parser_fn, force=True)
         return
 
     run_loop(llm_client, parser_fn, args.debug)

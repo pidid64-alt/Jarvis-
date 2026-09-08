@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Jarvis Control Core** — Local voice control for CachyOS/Arch + XFCE: hotkey → record → whisper.cpp STT → whitelist command match → execute → Piper TTS → voice response. Fully local, no cloud.
+**Jarvis Control Core** — Local voice control for CachyOS/Arch + XFCE: hotkey → record → whisper.cpp STT → whitelist command match → execute → Piper TTS → voice response. Local STT/TTS and offline command matching/monitoring; optional cloud LLM for free-form requests.
 
 Key security principle: **Recognized voice text NEVER becomes part of shell commands**. It only SELECTS which pre-defined command from `commands.json` runs. Commands are static, written by you in advance.
 
@@ -113,7 +113,7 @@ Key fields:
 - **speak_output: true** — speaks stdout of command (for status queries)
 - **speak_before: true** — speaks response BEFORE command runs (required for suspend/lock/poweroff/reboot/logout — otherwise TTS won't finish)
 - **background: true** — runs async, speaks response immediately, done_message on completion
-- **min_score** — per-command confidence threshold (default 0.6). Critical commands (poweroff, reboot, logout, system_update) use 0.85-0.9
+- **min_score** — per-command fuzzy similarity threshold (default 0.72). Critical commands (poweroff, reboot, logout, system_update) use 0.85-0.9
 - **confirm: true** — requires voice confirmation ("Точно выключить? Скажи да") before executing
 
 File is hot-reloaded on every request — no daemon restart needed.
@@ -126,13 +126,18 @@ File is hot-reloaded on every request — no daemon restart needed.
    вхождения фраз в текст (жадно от самой длинной, дедуп по id, порядок как в
    речи). Нашлись → команды исполняются локально мгновенно, БЕЗ LLM. Защита
    от «проглатывания»: если слов вне найденных фраз больше
-   `exact_max_extra_words` (default 6) — реплика уходит на ступень 2.
+   `exact_max_extra_words` (default 6), либо есть содержательные слова вне
+   совпадений — реплика уходит на ступень 2. Совпадения по границам слов
+   после Unicode/ё/пунктуационной нормализации; неоднозначности и отрицания
+   локально не исполняются.
    Здесь же работают мультикоманды без сети («открой дискорд и какая погода»).
 2. **LLM-маршрут** (`try_llm_route`) — свободная речь, опечатки, мультикоманды.
-3. **Fuzzy fallback** (`match_command`, одиночный результат):
-   difflib.SequenceMatcher только если сказано не меньше слов, чем во фразе;
-   среди точных вхождений выбирается самое длинное/специфичное;
-   per-command `min_score` переопределяет глобальный `match_threshold`.
+3. **Fuzzy fallback** (`match_commands_local` → `match_command`):
+   до 4 частей через «и/потом/затем», весь план валидируется до исполнения.
+   SequenceMatcher только если сказано не меньше слов, чем во фразе;
+   `min_score` переопределяет `match_threshold` (0.72), отрыв от второй
+   команды должен быть ≥ `match_ambiguity_margin` (0.06). Опасные команды
+   exact-only; `handle_command` форсирует подтверждение по тегу dangerous.
 
 ## LLM Route (свободная речь + мультикоманды, 2026-08)
 
@@ -158,8 +163,15 @@ LLM возвращает строгий JSON со СПИСКОМ действи�
 Ключ: env `OPENROUTER_API_KEY` из `~/.config/jarvis/env`
 (`EnvironmentFile=-` в юнитах; отсутствие файла = работа без LLM).
 Контрольный прогон: `scripts/test_llm.sh` (5 фраз + замер задержки).
-Автономка `autonomy.py` использует тот же конфиг: LLM решает skip/notify,
-результат пишется в STATE_DIR/inbox.json и озвучивается демоном раз в ~120с.
+Автономка `autonomy.py`: стандартные пороги/условия оцениваются локально
+без LLM; LLM интерпретирует только пользовательские правила без явного
+условия. Исполняются исключительно `autonomy_safe: true` команды без
+confirm/dangerous. Метрики: `health_checks.py`. Состояние сохраняется в
+STATE_DIR/autonomy_state.json, очередь — inbox.json (`inbox_store.py`, flock
+и атомарная запись). Тихие часы действуют и на отправку, и на озвучку.
+Подробнее: `docs/recognition-and-autonomy.md`.
+
+Тесты без устройств/сети: `python -m unittest discover -v` (нужен requests).
 
 ## VAD Recording (Voice Activity Detection)
 
