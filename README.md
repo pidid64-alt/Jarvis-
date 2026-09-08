@@ -67,6 +67,8 @@ chmod +x install.sh
 
 1. Клонирует и собирает `whisper.cpp` (`cmake -B build && cmake --build build`),
    качает мультиязычную квантованную модель `base-q5_1` (~60МБ, понимает русский).
+   Исходники whisper.cpp в git не входят: если каталог уже есть, но пустой
+   (типичный leftover после clone), установщик переклонирует его.
 2. Ставит `piper-tts[http]` в venv, качает голос `ru_RU-dmitri-medium`.
 3. Устанавливает `systemd --user` юниты и включает STT, TTS, Jarvis и автономный мониторинг.
 4. Вешает `Super+J` на `jarvis-trigger.sh` через `xfconf-query`.
