@@ -4,7 +4,7 @@
   "language": "ru",
   "sample_rate": 16000,
   "record_seconds": 4,
-  "match_threshold": 0.6,
+  "match_threshold": 0.72,
   "http_timeout": 30,
   "vad_aggressiveness": 2,
   "vad_wait_speech_seconds": 4.0,
@@ -22,5 +22,10 @@
     "max_retries": 1,
     "fallback_to_match": true,
     "conversation_window_seconds": 30
-  }
+  },
+  "match_ambiguity_margin": 0.06,
+  "vad_start_speech_seconds": 0.09,
+  "vad_min_speech_seconds": 0.18,
+  "stt_prompt": "",
+  "stt_no_speech_threshold": 0.6
 }

@@ -70,7 +70,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now jarvis-whisper.service jarvis-piper.service
 echo "-> Жду, пока STT/TTS серверы поднимутся..."
 sleep 3
-systemctl --user enable --now jarvis.service
+systemctl --user enable --now jarvis.service jarvis-autonomy.service
 
 # ---------------------------------------------------------------------------
 # 4. Хоткей (XFCE)

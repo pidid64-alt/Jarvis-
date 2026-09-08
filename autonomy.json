@@ -1,39 +1,50 @@
 {
-  "_comment": "Расписание автономных проверок для autonomy.py. Каждое правило выполняется в фоне, результат читает LLM и решает, стоит ли писать в inbox.",
+  "_comment": "Автономные read-only проверки: пороги обрабатываются локально без LLM. Пользовательские правила без локального условия интерпретирует LLM. Состояние и очередь сохраняются между перезапусками.",
   "rules": [
     {
       "id": "morning_updates",
       "time": "09:00",
       "check": "check_updates",
       "prompt": "Утренняя проверка системных обновлений. Если 0 — не сообщай. Если больше 0 — коротко скажи сколько.",
-      "if_changed": true
+      "if_changed": true,
+      "notify_pattern": "Доступно обновлений:\\s*[1-9]\\d*",
+      "repeat_seconds": 21600
     },
     {
       "id": "hourly_failed_services",
       "every_minutes": 60,
       "check": "failed_services",
-      "prompt": "Проверка failed systemd-сервисов. Если ничего не упало — skip. Если есть упавшие — кратко перечисли (до 2 имён)."
+      "prompt": "Проверка failed systemd-сервисов. Если ничего не упало — skip. Если есть упавшие — кратко перечисли (до 2 имён).",
+      "notify_pattern": "Упавших сервисов:\\s*[1-9]\\d*",
+      "if_changed": true,
+      "repeat_seconds": 21600
     },
     {
       "id": "cpu_temp_alert",
       "every_minutes": 30,
       "check": "cpu_temp",
       "if_above": 75,
-      "prompt": "Температура CPU. Если выше 75 градусов — сообщи. Если норма — skip."
+      "prompt": "Температура CPU. Если выше 75 градусов — сообщи. Если норма — skip.",
+      "metric": "temperature",
+      "repeat_seconds": 21600
     },
     {
       "id": "disk_space_warning",
       "every_minutes": 120,
       "check": "disk_space",
       "if_below_percent": 15,
-      "prompt": "Свободное место на диске. Если меньше 15% — предупреди. Иначе skip."
+      "prompt": "Свободное место на диске. Если меньше 15% — предупреди. Иначе skip.",
+      "metric": "free_percent",
+      "repeat_seconds": 21600
     },
     {
       "id": "high_memory",
       "every_minutes": 30,
       "check": "memory_usage",
       "if_above_percent": 85,
-      "prompt": "Использование памяти. Если выше 85% — сообщи, иначе skip."
+      "prompt": "Использование памяти. Если выше 85% — сообщи, иначе skip.",
+      "metric": "used_percent",
+      "repeat_seconds": 21600
     },
     {
       "id": "battery_low",
@@ -41,25 +52,34 @@
       "check": "battery_status",
       "if_below_percent": 20,
       "only_if_on_battery": true,
-      "prompt": "Заряд батареи. Если ниже 20% и ноут от батареи — предупреди. Иначе skip."
+      "prompt": "Заряд батареи. Если ниже 20% и ноут от батареи — предупреди. Иначе skip.",
+      "metric": "charge_percent",
+      "repeat_seconds": 21600
     },
     {
       "id": "logs_errors",
       "every_minutes": 60,
       "check": "journal_errors",
-      "has_keywords": ["error", "failed", "critical"],
-      "prompt": "Ошибки в журнале. Если есть серьёзные — кратко сообщи. Если мусор — skip."
+      "prompt": "Ошибки в журнале. Если есть серьёзные — кратко сообщи. Если мусор — skip.",
+      "skip_patterns": [
+        "Критичных ошибок в логе этой загрузки нет"
+      ],
+      "notify_pattern": "Критичных ошибок в логе:|одна критичная запись",
+      "if_changed": true,
+      "repeat_seconds": 21600
     },
     {
       "id": "internet_check",
       "every_minutes": 15,
       "check": "internet_check",
       "if_equals": "Интернета нет.",
-      "prompt": "Проверка интернета. Если нет — сообщи. Иначе skip."
+      "prompt": "Проверка интернета. Если нет — сообщи. Иначе skip.",
+      "repeat_seconds": 21600
     }
   ],
-  "quiet_hours": {"start": "23:00", "end": "07:00"},
-  "check_scripts_dir": "$HOME/jarvis/scripts",
-  "inbox_file": "inbox.json",
+  "quiet_hours": {
+    "start": "23:00",
+    "end": "07:00"
+  },
   "min_notify_interval_seconds": 300
 }

@@ -1,0 +1,9 @@
+# Python environments and generated caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+# Local secrets and runtime artifacts
+.env
+*.log
