@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Action)
+﻿param([Parameter(Mandatory=$true)][string]$Action)
 $ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 Add-Type @'

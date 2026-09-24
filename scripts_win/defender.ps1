@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $mp = Get-MpComputerStatus -ErrorAction SilentlyContinue
 if (-not $mp) { Write-Output "Защитник Windows недоступен."; exit 0 }

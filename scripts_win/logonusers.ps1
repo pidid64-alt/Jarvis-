@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $rows = @(query user 2>$null)
 if ($rows.Count -le 1) { Write-Output "Сейчас в системе только этот сеанс."; exit 0 }

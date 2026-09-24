@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Jarvis Control Core — установка на Windows 10/11 (x64).
 

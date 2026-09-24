@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $g = Get-CimInstance Win32_VideoController | Select-Object -First 1
 if (-not $g) { Write-Output "Видеокарта не найдена."; exit 0 }

@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $loc = if ($env:JARVIS_WEATHER_LOCATION) { $env:JARVIS_WEATHER_LOCATION } else { "Moscow" }
 try {

@@ -1,4 +1,4 @@
-param([string]$Action = 'count_recent')
+﻿param([string]$Action = 'count_recent')
 $ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $home_ = $env:USERPROFILE

@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $parts=@()
 foreach ($d in (Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3")) {

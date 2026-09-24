@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 foreach ($a in @('msedge','chrome','firefox','brave','opera')) {
   $cmd = Get-Command $a -ErrorAction SilentlyContinue

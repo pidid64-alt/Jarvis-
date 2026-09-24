@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $files = @(Get-ChildItem -Path (Join-Path $env:USERPROFILE 'Pictures') -Include *.jpg,*.png -File -Recurse -ErrorAction SilentlyContinue)
 if (-not $files) { Write-Output "Картинок для обоев не нашёл."; exit 0 }
