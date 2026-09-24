@@ -32,6 +32,22 @@ from datetime import datetime
 from pathlib import Path
 
 import inbox_store
+
+def _win_no_window_kwargs():
+    import subprocess, os
+    if os.name == "nt":
+        try:
+            creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            try:
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            except AttributeError:
+                startupinfo.wShowWindow = 0
+            return {"creationflags": creationflags, "startupinfo": startupinfo}
+        except Exception:
+            pass
+    return {}
 from platform_support import (commands_file_name, file_lock,
                               substitute_placeholders)
 
@@ -99,7 +115,8 @@ def run_check(check_id: str, timeout: int = 30) -> str:
     shell = substitute_placeholders(shell, BASE_DIR, STATE_DIR)
     try:
         result = subprocess.run(
-            shell, shell=True, capture_output=True, timeout=timeout
+            shell, shell=True, capture_output=True, timeout=timeout,
+            **_win_no_window_kwargs()
         )
         if result.returncode != 0:
             logging.warning("autonomy: %s завершился с кодом %s", check_id, result.returncode)

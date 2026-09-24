@@ -24,6 +24,22 @@ from pathlib import Path
 
 IS_WINDOWS = os.name == "nt"
 
+def _win_no_window_kwargs():
+    """CREATE_NO_WINDOW + STARTUPINFO SW_HIDE — убирает мерцающие консоли на Windows."""
+    if IS_WINDOWS:
+        try:
+            creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            try:
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            except AttributeError:
+                startupinfo.wShowWindow = 0
+            return {"creationflags": creationflags, "startupinfo": startupinfo}
+        except Exception:
+            pass
+    return {}
+
 BASE_DIR = Path(__file__).resolve().parent
 # Один и тот же путь на обеих платформах — проще документировать и скриптам.
 STATE_DIR = Path.home() / ".local" / "share" / "jarvis"
@@ -94,6 +110,7 @@ def notify(title: str, body: str, urgency: str = "normal"):
                  "-Title", str(title), "-Body", str(body), "-Urgency", urgency],
                 check=False, timeout=6,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                **_win_no_window_kwargs(),
             )
         except (OSError, subprocess.TimeoutExpired):
             pass
@@ -161,7 +178,8 @@ def beep(cfg: dict):
         return
     try:
         subprocess.run(beep_cmd, shell=True, check=False, timeout=3,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       **_win_no_window_kwargs())
     except subprocess.TimeoutExpired:
         pass
 
