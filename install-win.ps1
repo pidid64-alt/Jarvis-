@@ -123,6 +123,18 @@ if ($WakewordModels) {
   Write-Step 'Нашёл модель wake-word — ставлю openwakeword...'
   & $Py -m pip install --quiet openwakeword
 }
+# Workaround piper-tts 1.8.0 Windows wheel hardcodes D:/a/piper1-gpl/.../espeak-ng-data
+$EspeakSrc = Get-ChildItem (Join-Path $Venv "Lib\site-packages\piper") -Recurse -Filter "phontab" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($EspeakSrc) {
+  $HardcodedDst = "D:/a/piper1-gpl/piper1-gpl/_skbuild/win-amd64-3.9/cmake-build/espeak_ng-install/share/espeak-ng-data"
+  if (-not (Test-Path $HardcodedDst)) {
+    try {
+      New-Item -ItemType Directory -Force -Path $HardcodedDst | Out-Null
+      Copy-Item (Join-Path (Split-Path $EspeakSrc.FullName -Parent) "*") $HardcodedDst -Recurse -Force
+      Write-Step "Пропатчил espeak-ng-data для piper (workaround D:/a/...)"
+    } catch { Write-Host "Не смог пропатчить espeak-ng-data: $_" -ForegroundColor Yellow }
+  }
+}
 
 # --- 3. whisper-server.exe ---------------------------------------------------
 if (-not (Test-Path $WhisperSrv)) {
