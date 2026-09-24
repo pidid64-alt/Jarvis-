@@ -188,6 +188,22 @@ def decide_via_llm(rule: dict, raw_output: str, llm_client, parser=None) -> dict
     return parse_notification_decision(llm_client, rule.get("prompt", ""), raw_output)
 
 
+import random as _random
+_PLAYFUL_INTROS = [
+    "Сэр, я тут подглядел —",
+    "Сэр, мне тут птичка нашептала, что",
+    "Сэр, докладываю —",
+]
+
+def _playful_fallback(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return _random.choice(_PLAYFUL_INTROS)
+    if t.startswith("Сэр,"):
+        return t
+    return f"{_random.choice(_PLAYFUL_INTROS)} {t[0].lower() + t[1:] if t[0].isupper() else t}"
+
+
 def append_inbox(text: str, source: str = "autonomy"):
     inbox_store.append(INBOX_FILE, text, source)
 
@@ -258,7 +274,20 @@ def process_rule(rule: dict, llm_client, parser, state: dict,
         previous.pop("pending", None)
         return
     if local is True:
-        decision = {"action": "notify", "text": text}
+        # Порог сработал — пробуем весело перефразировать через LLM, иначе playful fallback
+        if llm_client:
+            try:
+                llm_decision = decide_via_llm(rule, raw, llm_client, parser)
+                if llm_decision.get("action") == "notify" and llm_decision.get("text", "").strip():
+                    decision = llm_decision
+                else:
+                    # LLM сказал skip, но порог превышен — не пропускаем
+                    decision = {"action": "notify", "text": _playful_fallback(text)}
+            except Exception:
+                logging.exception("autonomy: %s — LLM недоступен, fallback", rid)
+                decision = {"action": "notify", "text": _playful_fallback(text)}
+        else:
+            decision = {"action": "notify", "text": _playful_fallback(text)}
     elif llm_client:
         try:
             decision = decide_via_llm(rule, raw, llm_client, parser)
