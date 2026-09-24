@@ -8,5 +8,11 @@ $failed = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Ob
   $_.StartMode -eq 'Auto' -and $_.State -ne 'Running' -and -not $_.DelayedAutoStart -and $_.Name -notmatch $ignore
 }
 if (-not $failed) { Write-Output "Сломанных сервисов нет, всё работает штатно."; exit 0 }
-Write-Output "Упавших сервисов: $($failed.Count)."
-foreach ($s in $failed) { Write-Output "Сервис $($s.Name) ($($s.DisplayName), состояние $($s.State)): автоматический запуск, но не работает." }
+# Весёлый префикс — рандомно выбираем обращение
+$intros = @(
+  "Сэр, я тут подглядел — упавших сервисов: $($failed.Count).",
+  "Сэр, мне тут птичка нашептала, что упали $($failed.Count) сервиса.",
+  "Сэр, докладываю — нашёл $($failed.Count) упавших сервиса."
+)
+Write-Output ($intros | Get-Random)
+foreach ($s in $failed | Select-Object -First 2) { Write-Output "Сервис $($s.Name) ($($s.DisplayName), состояние $($s.State)): автоматический запуск, но не работает." }
