@@ -116,7 +116,11 @@ def play_wav(path: Path, timeout: float = 30) -> bool:
     if IS_WINDOWS:
         try:
             import winsound
-            winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_SYNC)
+            # SND_SYNC == 0 (default, синхронно), в Python 3.13 константа убрана — используем только SND_FILENAME
+            flags = getattr(winsound, 'SND_FILENAME', 0x00020000)
+            if hasattr(winsound, 'SND_SYNC'):
+                flags |= winsound.SND_SYNC
+            winsound.PlaySound(str(path), flags)
             return True
         except Exception as e:  # noqa: BLE001 — устройство может быть занято
             logging.warning("winsound не смог проиграть ответ: %s", e)
