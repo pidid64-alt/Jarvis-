@@ -12,7 +12,9 @@ Jarvis Control Core
 выполнится. Сама команда всегда statically задана в конфиге.
 
 Использование:
-  jarvis.py            запуск демона (ждёт SIGUSR1 от jarvis-trigger.sh)
+  jarvis.py            запуск демона (ждёт SIGUSR1 от jarvis-trigger.sh
+                       на Linux либо trigger-файл на Windows — см.
+                       platform_support.fire_trigger)
   jarvis.py --once      разовый прогон в консоли, без демона — для отладки
   jarvis.py --debug     то же + подробные логи в stdout
 """
@@ -34,6 +36,7 @@ import urllib.parse
 from pathlib import Path
 
 import inbox_store
+import platform_support as plat
 from recognition import SpeechBuffer, command_text, has_negation, normalize_text, phrase_spans
 
 try:
@@ -90,7 +93,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
-STATE_DIR = Path.home() / ".local" / "share" / "jarvis"
+STATE_DIR = plat.STATE_DIR
 PID_FILE = STATE_DIR / "jarvis.pid"
 LOG_FILE = STATE_DIR / "jarvis.log"
 REC_FILE = STATE_DIR / "command.wav"
@@ -124,7 +127,7 @@ DEFAULT_CONFIG = {
     # Потолок записи с VAD — страховка от бесконечной записи на шумном фоне.
     "max_record_seconds": 12.0,
     # Короткий сигнал «говори» после триггера (пустая строка — без сигнала).
-    "beep_command": "paplay /usr/share/sounds/freedesktop/stereo/message.oga",
+    "beep_command": plat.default_beep_command(),
     # --- LLM-парсер (OmniRoute, локальный OpenAI-совместимый endpoint) ---
     "llm": {
         # Главный выключатель. Если false — сразу fallback на match_command.
@@ -158,7 +161,8 @@ def load_config() -> dict:
 
 
 def load_commands() -> list:
-    data = load_json(BASE_DIR / "commands.json", {"commands": []})
+    # На Windows файл-кандидат другой (commands-win.json), фразы те же.
+    data = load_json(BASE_DIR / plat.commands_file_name(), {"commands": []})
     return data.get("commands", [])
 
 
@@ -168,26 +172,12 @@ def load_commands() -> list:
 
 
 def notify(title: str, body: str, urgency: str = "normal"):
-    try:
-        subprocess.run(
-            ["notify-send", "-u", urgency, "-a", "Jarvis", title, body],
-            check=False,
-            timeout=5,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    plat.notify(title, body, urgency)
 
 
 def beep(cfg: dict):
     """Короткий сигнал «говори» — чтобы не начинать фразу раньше записи."""
-    beep_cmd = cfg.get("beep_command", "")
-    if not beep_cmd:
-        return
-    try:
-        subprocess.run(beep_cmd, shell=True, check=False, timeout=3,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
-        pass
+    plat.beep(cfg)
 
 
 def write_wav(path: Path, pcm: bytes, sample_rate: int):
@@ -224,47 +214,17 @@ def clear_coding_session():
 
 
 def send_to_claude_window(window_id: int, text: str) -> bool:
-    """Отправляет текст в окно терминала с claude."""
-    try:
-        # Проверяем, что окно существует
-        subprocess.run(
-            ["xdotool", "getwindowname", str(window_id)],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-    except subprocess.CalledProcessError:
-        return False
-
-    # Активируем окно
-    subprocess.run(
-        ["xdotool", "windowactivate", "--sync", str(window_id)],
-        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    time.sleep(0.2)
-
-    # Переключаемся на вкладку claude (ctrl+Page_Down)
-    subprocess.run(
-        ["xdotool", "key", "--clearmodifiers", "ctrl+Page_Down"],
-        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    time.sleep(0.2)
-
-    # Вводим текст
-    subprocess.run(
-        ["xdotool", "type", "--clearmodifiers", "--delay", "10", text],
-        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-
-    # Enter
-    subprocess.run(
-        ["xdotool", "key", "--clearmodifiers", "Return"],
-        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    return True
+    """Отправляет текст в окно терминала с claude (xdotool; Windows — нет)."""
+    return plat.platform_send_to_window(window_id, text)
 
 
 def record_audio_fixed(cfg: dict, path: Path):
     """Старый способ: фиксированные record_seconds. Используется как
-    fallback, когда webrtcvad не установлен."""
+    fallback, когда webrtcvad не установлен. На Windows вместо parecord —
+    sounddevice."""
+    if plat.IS_WINDOWS:
+        plat.record_windows_fixed(path, cfg["sample_rate"], cfg["record_seconds"])
+        return
     cmd = [
         "parecord",
         f"--rate={cfg['sample_rate']}",
@@ -293,6 +253,9 @@ def record_audio_vad(cfg: dict, path: Path) -> bool:
     PCM читается напрямую из stdout parecord (--raw), кадры по 30мс
     прогоняются через webrtcvad. В файл попадает всё с небольшим
     преролом до первого речевого кадра, чтобы не срезать начало слова.
+
+    На Windows parecord нет: тот же конвейер читает sounddevice
+    (platform_support.WindowsMicStream), логика VAD/прерола общая.
     """
     rate = cfg["sample_rate"]
     frame_ms = 30
@@ -304,14 +267,22 @@ def record_audio_vad(cfg: dict, path: Path) -> bool:
     max_frames = int(cfg["max_record_seconds"] * 1000 / frame_ms)
     preroll_frames = 10  # ~300мс до начала речи
 
-    cmd = [
-        "parecord",
-        f"--rate={rate}",
-        "--channels=1",
-        "--format=s16le",
-        "--raw",
-    ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if plat.IS_WINDOWS:
+        mic = plat.WindowsMicStream(rate)
+        proc = None
+        selector = None
+        mic_read = mic.read
+        mic_close = mic.close
+    else:
+        cmd = [
+            "parecord",
+            f"--rate={rate}",
+            "--channels=1",
+            "--format=s16le",
+            "--raw",
+        ]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        mic = None
 
     buffer = SpeechBuffer(
         start_frames=math.ceil(cfg.get("vad_start_speech_seconds", 0.09) * 1000 / frame_ms),
@@ -323,6 +294,33 @@ def record_audio_vad(cfg: dict, path: Path) -> bool:
     pending = bytearray()
     # A stalled audio device must not hold the daemon's processing lock forever.
     deadline = time.monotonic() + cfg["max_record_seconds"]
+    if plat.IS_WINDOWS:
+        # sounddevice читает блоками сам — просто держим общий дедлайн.
+        try:
+            while frames_total < max_frames:
+                if time.monotonic() >= deadline:
+                    break
+                chunk = mic_read(frame_bytes - len(pending))
+                if not chunk:
+                    break
+                pending.extend(chunk)
+                if len(pending) < frame_bytes:
+                    continue
+                frame = bytes(pending)
+                pending.clear()
+                frames_total += 1
+                if buffer.feed(frame, vad.is_speech(frame, rate)):
+                    break
+                if not buffer.started and frames_total >= wait_frames:
+                    break
+        finally:
+            mic_close()
+
+        if not buffer.valid:
+            return False
+        write_wav(path, bytes(buffer.audio), rate)
+        return True
+
     selector = selectors.DefaultSelector()
     try:
         selector.register(proc.stdout, selectors.EVENT_READ)
@@ -409,12 +407,10 @@ def speak(cfg: dict, text: str):
         )
         resp.raise_for_status()
         REPLY_FILE.write_bytes(resp.content)
-        subprocess.run(["paplay", str(REPLY_FILE)], check=False, timeout=30)
+        plat.play_wav(REPLY_FILE)
     except requests.exceptions.RequestException as e:
         logging.error("TTS недоступен: %s", e)
         notify("Jarvis", "TTS-сервер не отвечает", urgency="critical")
-    except subprocess.TimeoutExpired:
-        logging.error("paplay завис при воспроизведении ответа")
 
 
 # ---------------------------------------------------------------------------
@@ -563,7 +559,8 @@ def match_commands_local(text: str, commands: list, threshold: float,
 
 def run_background(cfg: dict, cmd: dict):
     proc = subprocess.Popen(
-        cmd["command"], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        plat.substitute_placeholders(cmd["command"], BASE_DIR, STATE_DIR),
+        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
 
     def watcher():
@@ -578,13 +575,12 @@ def run_background(cfg: dict, cmd: dict):
 def execute_foreground(cmd: dict) -> str:
     try:
         result = subprocess.run(
-            cmd["command"],
+            plat.substitute_placeholders(cmd["command"], BASE_DIR, STATE_DIR),
             shell=True,
             capture_output=True,
-            text=True,
             timeout=cmd.get("timeout", 15),
         )
-        return (result.stdout or result.stderr or "").strip()
+        return plat.decode_output(result.stdout or result.stderr or b"").strip()
     except subprocess.TimeoutExpired:
         logging.error("команда %s не уложилась в таймаут", cmd.get("id"))
         return ""
@@ -643,8 +639,9 @@ def handle_command(cfg: dict, cmd: dict, score: float):
 
     if cmd.get("speak_before"):
         speak(cfg, cmd.get("response", ""))
-        subprocess.Popen(cmd["command"], shell=True,
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            plat.substitute_placeholders(cmd["command"], BASE_DIR, STATE_DIR),
+            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
 
     output = execute_foreground(cmd)
@@ -715,13 +712,9 @@ def handle_search(cfg: dict, query: str, open_browser: bool,
     if open_browser:
         url = ("https://duckduckgo.com/?q="
                + urllib.parse.quote_plus(query))
-        try:
-            subprocess.Popen(["xdg-open", url],
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
+        if plat.open_url(url):
             said = f"Открываю результаты по запросу {query}."
-        except Exception:
-            logging.exception("не удалось открыть браузер")
+        else:
             said = "Не смог открыть браузер."
         speak(cfg, said)
         return "command", said
@@ -1016,22 +1009,43 @@ def on_signal(signum, frame):
     trigger_event.set()
 
 
+def wait_for_trigger(timeout: float) -> bool:
+    """Ждёт пробуждение до timeout секунд: сигнал (Linux) или trigger-файл
+    (Windows, он же страховка на Linux). Возвращает True по триггеру."""
+    deadline = time.monotonic() + timeout
+    while True:
+        if trigger_event.is_set():
+            trigger_event.clear()
+            return True
+        if plat.consume_trigger():
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        trigger_event.wait(timeout=min(0.3, remaining))
+
+
 def run_daemon(cfg: dict):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(str(os.getpid()))
-    signal.signal(signal.SIGUSR1, on_signal)
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    # SIGUSR1 есть не везде (на Windows его нет) — там только trigger-файл.
+    if hasattr(signal, "SIGUSR1"):
+        signal.signal(signal.SIGUSR1, on_signal)
+    try:
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    except (ValueError, OSError):
+        pass
 
-    logging.info("Демон запущен, pid=%d", os.getpid())
+    logging.info("Демон запущен, pid=%d (windows=%s)", os.getpid(), plat.IS_WINDOWS)
     notify("Jarvis", "Ядро управления запущено.")
 
     last_inbox_check = 0.0
     try:
         while True:
-            # Ждём wake-word с таймаутом, чтобы периодически проверять inbox
-            triggered = trigger_event.wait(timeout=INBOX_CHECK_INTERVAL)
+            # Ждём wake (сигнал/trigger-файл) с таймаутом, чтобы периодически
+            # проверять inbox
+            triggered = wait_for_trigger(timeout=INBOX_CHECK_INTERVAL)
             if triggered:
-                trigger_event.clear()
                 if not processing_lock.acquire(blocking=False):
                     continue
                 try:
@@ -1078,6 +1092,11 @@ def main():
         format="%(asctime)s %(levelname)s %(message)s",
         handlers=handlers,
     )
+
+    # Локальный env-файл (OPENROUTER_API_KEY и т.п.): systemd читает его
+    # сам на Linux, на Windows читаем вручную — applied на уже заданные
+    # переменные не наступает.
+    plat.load_env_file()
 
     cfg = load_config()
 

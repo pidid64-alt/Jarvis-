@@ -5,6 +5,11 @@
 локальный разбор команд и мониторинг работают без облака. Для свободного
 диалога и сложных запросов опционально используется внешний LLM.
 
+**Windows 10/11 тоже поддерживается**: тот же конвейер на Win+J,
+trigger-файле вместо SIGUSR1 и `commands-win.json` (270 команд, фразы
+как в Linux). Установка: `powershell -ExecutionPolicy Bypass -File
+install-win.ps1`. Подробности и отличия — [WINDOWS.md](WINDOWS.md).
+
 **Обновление распознавания и автономности:** нормализация речи, защита от
 неоднозначных команд, локальные последовательности, фильтрация короткого шума
 и восемь автономных проверок без LLM. [Настройки и применение обновления](docs/recognition-and-autonomy.md).
@@ -43,17 +48,22 @@ whitelist-командах Литвина.
 |---|---|
 | `jarvis.py` | Демон-оркестратор: сигнал → запись → STT → matching → exec → TTS |
 | `recognition.py` | Нормализация команд и буфер речевых кадров VAD |
+| `platform_support.py` | Кроссплатформенный слой: уведомления, звук, микрофон, блокировки, trigger-файл (Windows/Linux) |
 | `autonomy.py`, `autonomy.json` | Автономные проверки, расписание, тихие часы и дедупликация |
-| `health_checks.py` | Структурированные read-only метрики CPU, диска, памяти и батареи |
+| `health_checks.py` | Структурированные read-only метрики CPU, диска, памяти и батареи (Linux и Windows) |
 | `inbox_store.py` | Атомарная очередь уведомлений с межпроцессной блокировкой |
 | `config.json` | Порты, язык, длительность записи, порог уверенности |
-| `commands.json` | Белый список голосовых команд — редактируется на лету |
+| `commands.json` | Белый список голосовых команд (Linux) — редактируется на лету |
+| `commands-win.json` | То же для Windows: 270 команд, фразы совпадают с Linux |
 | `scripts/*.sh` | Хелперы для команд с «говорящим» выводом (статус, диск, IP) |
-| `jarvis-trigger.sh` | Будит демон по хоткею |
+| `scripts_win/*.ps1` | То же для Windows (PowerShell, UTF-8-вывод) |
+| `jarvis-trigger.sh`, `jarvis-trigger.py` | Будят демон по хоткею (SIGUSR1 / trigger-файл) |
+| `hotkey-win.py` | Windows: глобальный хоткей Win+J через Win32 RegisterHotKey |
 | `wakeword.py` | Опционально: слушает микрофон фоново, будит демон по слову "Джарвис" |
 | `wakeword_config.json` | Порог уверенности, кулдаун, путь к модели wake-word |
 | `systemd/*.service` | 5 юнитов: whisper-server, piper-server, jarvis, autonomy, wakeword (опц.) |
-| `install.sh` | Сборка whisper.cpp, установка Piper, systemd, хоткей, wake-word (если есть модель) |
+| `install.sh` | Linux: сборка whisper.cpp, Piper, systemd, хоткей, wake-word |
+| `install-win.ps1` | Windows: venv, готовый whisper-server.exe, Scheduled Tasks, хоткей |
 
 ## Установка
 

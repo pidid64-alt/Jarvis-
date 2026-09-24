@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Jarvis Control Core** — Local voice control for CachyOS/Arch + XFCE: hotkey → record → whisper.cpp STT → whitelist command match → execute → Piper TTS → voice response. Local STT/TTS and offline command matching/monitoring; optional cloud LLM for free-form requests.
 
+**Windows 10/11 is a first-class target** (since 2026-09): same pipeline on Win+J via `hotkey-win.py` (Win32 RegisterHotKey), wake via trigger-file instead of SIGUSR1 (`platform_support.py`), whitelist `commands-win.json` (phrases shared with Linux, bodies are cmd/PowerShell/`scripts_win/*.ps1`), recording via sounddevice, TTS playback via winsound, tasks registered by `install-win.ps1`. Platform branches live ONLY in `platform_support.py` + small `IS_WINDOWS` checks in `jarvis.py`/`wakeword.py`/`health_checks.py`; keep it that way. Details: `WINDOWS.md`.
+
 Key security principle: **Recognized voice text NEVER becomes part of shell commands**. It only SELECTS which pre-defined command from `commands.json` runs. Commands are static, written by you in advance.
 
 ## Architecture
@@ -49,6 +51,11 @@ Two independent wake methods: hotkey (Super+J) and wake-word ("Джарвис").
 ```bash
 # Full installation (idempotent)
 ./install.sh
+
+# Windows (idempotent; Python 3.11–3.13 required)
+powershell -ExecutionPolicy Bypass -File install-win.ps1
+# uninstall scheduled tasks only:
+powershell -ExecutionPolicy Bypass -File install-win.ps1 -Uninstall
 
 # Manual steps if needed (install.sh clones whisper.cpp if CMakeLists.txt is missing):
 cd whisper.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_SERVER=ON && cmake --build build -j$(nproc)
