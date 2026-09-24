@@ -191,7 +191,9 @@ if (-not (Test-Path $EnvFile)) {
   @(
     '# Ключи для LLM-маршрута (по строке KEY=VALUE). Без ключа голосовые'
     '# команды из белого списка работают как обычно, LLM просто выключен.'
-    '# OPENROUTER_API_KEY=sk-or-...'
+    '# Для OmniRoute (дефолт): OMNIROUTE_API_KEY=sk-...'
+    '# Для OpenRouter: OPENROUTER_API_KEY=sk-or-...'
+    '# Не забудь выставить model и base_url в config.json под свой OmniRoute'
   ) | Set-Content -Path $EnvFile -Encoding UTF8
   Write-Step "Создан шаблон env-файла: $EnvFile"
 }
@@ -246,8 +248,8 @@ if (-not $SkipTasks) {
 3) Дальше — Win+J (хоткей jarvis-hotkey), дождись уведомления
    «Слушаю…», говори команду. Список — commands-win.json.
 
-Ключ LLM (опционально): впиши OPENROUTER_API_KEY=... в
-  $EnvFile
+Ключ LLM (опционально): впиши OMNIROUTE_API_KEY=... (или OPENROUTER_API_KEY) в
+  $EnvFile и выставь model/base_url в config.json
 и перезапусти задачу jarvis.
 
 Статус задач:

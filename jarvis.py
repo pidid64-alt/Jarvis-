@@ -835,7 +835,7 @@ def try_llm_route(cfg: dict, text: str) -> str | None:
         logging.debug("LLM: model не задан в config.json, fallback")
         return None
     api_key_env = llm_cfg.get("api_key_env", "OMNIROUTE_API_KEY")
-    api_key = os.environ.get(api_key_env, "")
+    api_key = os.environ.get(api_key_env, "") or os.environ.get("OPENROUTER_API_KEY", "") or os.environ.get("OMNIROUTE_API_KEY", "")
     if not api_key:
         logging.debug("LLM: env %s не задан, fallback", api_key_env)
         return None
