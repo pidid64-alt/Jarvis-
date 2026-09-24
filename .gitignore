@@ -7,5 +7,7 @@ __pycache__/
 # Local secrets and runtime artifacts
 .env
 *.log
-# Cloned and built by install.sh — not vendored in this repo
+# Cloned and built by installers — not vendored in this repo
 whisper.cpp/
+whisper-win/
+whisper-win.zip

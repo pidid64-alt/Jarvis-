@@ -1,5 +1,8 @@
-"""Cross-process inbox. Lock a separate file: JSON itself is atomically replaced."""
-import fcntl
+"""Cross-process inbox. Lock a separate file: JSON itself is atomically replaced.
+
+Блокировка кроссплатформенная (fcntl на POSIX, msvcrt на Windows) —
+см. platform_support.file_lock.
+"""
 import json
 import os
 import tempfile
@@ -7,6 +10,8 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+
+from platform_support import file_lock
 
 
 def atomic_write(path: Path, data):
@@ -26,8 +31,7 @@ def atomic_write(path: Path, data):
 @contextmanager
 def locked_inbox(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.with_suffix(".lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with file_lock(path.with_suffix(".lock")):
         data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
         if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
             raise ValueError("Invalid inbox format; preserving file")

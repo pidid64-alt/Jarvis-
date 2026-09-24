@@ -19,7 +19,6 @@ jarvis.py на idle-цикле.
 """
 
 import argparse
-import fcntl
 import hashlib
 import json
 import logging
@@ -33,6 +32,8 @@ from datetime import datetime
 from pathlib import Path
 
 import inbox_store
+from platform_support import (commands_file_name, file_lock,
+                              substitute_placeholders)
 
 BASE_DIR = Path(__file__).resolve().parent
 STATE_DIR = Path.home() / ".local" / "share" / "jarvis"
@@ -40,7 +41,7 @@ LOG_FILE = STATE_DIR / "autonomy.log"
 INBOX_FILE = STATE_DIR / "inbox.json"
 AUTONOMY_CONFIG = BASE_DIR / "autonomy.json"
 MAIN_CONFIG = BASE_DIR / "config.json"
-COMMANDS_FILE = BASE_DIR / "commands.json"
+COMMANDS_FILE = BASE_DIR / commands_file_name()
 SCHEDULE_FILE = STATE_DIR / "autonomy_state.json"
 
 # Only explicitly audited commands may run unattended. speak_output is NOT a
@@ -95,14 +96,16 @@ def run_check(check_id: str, timeout: int = 30) -> str:
     if not shell:
         logging.warning("autonomy: правило ссылается на неизвестную команду %s", check_id)
         return ""
+    shell = substitute_placeholders(shell, BASE_DIR, STATE_DIR)
     try:
         result = subprocess.run(
-            shell, shell=True, capture_output=True, text=True, timeout=timeout
+            shell, shell=True, capture_output=True, timeout=timeout
         )
         if result.returncode != 0:
             logging.warning("autonomy: %s завершился с кодом %s", check_id, result.returncode)
             return ""
-        out = (result.stdout or "").strip()
+        from platform_support import decode_output
+        out = decode_output(result.stdout or b"").strip()
         return out[:2000]  # ограничиваем, чтоб LLM не получил портянку
     except subprocess.TimeoutExpired:
         logging.warning("autonomy: %s превысил таймаут %ds", check_id, timeout)
@@ -295,13 +298,12 @@ def run_tick(cfg: dict, llm_client, parser, state: dict, force=False):
 def scheduled_tick(llm_client, parser=None, force=False):
     """Serialize daemon and --once runs; always reload persisted state under lock."""
     SCHEDULE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with SCHEDULE_FILE.with_suffix(".lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            logging.info("autonomy: другой процесс уже выполняет проверки")
-            return
-        run_tick(load_autonomy_config(), llm_client, parser, load_schedule(), force=force)
+    try:
+        with file_lock(SCHEDULE_FILE.with_suffix(".lock"), blocking=False):
+            run_tick(load_autonomy_config(), llm_client, parser,
+                     load_schedule(), force=force)
+    except BlockingIOError:
+        logging.info("autonomy: другой процесс уже выполняет проверки")
 
 
 def run_loop(llm_client, parser, debug: bool):
@@ -331,6 +333,10 @@ def main():
         format="%(asctime)s %(levelname)s %(message)s",
         handlers=handlers,
     )
+
+    # Локальный env-файл (на Windows systemd-то нет — читаем сами).
+    from platform_support import load_env_file
+    load_env_file()
 
     # LLM only interprets custom rules without deterministic local conditions.
     llm_client = None

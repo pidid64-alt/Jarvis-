@@ -16,17 +16,19 @@ Jarvis Wake-word Listener
 
 Требует:
   venv/bin/pip install openwakeword numpy
-  и системную утилиту `arecord` (пакет alsa-utils — обычно уже стоит)
   и .tflite/.onnx модель в models/wakeword/<model_name>
   (см. README: обучение модели на "Джарвис" через Colab-ноутбук).
 
-Захват звука сделан через дочерний процесс `arecord`, а не через
-sounddevice/PortAudio: на связке Bluetooth HFP-гарнитура + PipeWire
-PortAudio у части пользователей стабильно отдаёт полную цифровую
-тишину (Max amplitude: 0), тогда как `arecord -D pulse` тот же самый
-микрофон пишет корректно. Раз ALSA-путь через arecord уже подтверждённо
-работает на этой машине, используем его напрямую вместо более
-"нативного", но ненадёжного здесь sounddevice.
+Захват звука:
+  Linux — дочерний процесс `arecord`, а не sounddevice/PortAudio: на связке
+  Bluetooth HFP-гарнитура + PipeWire PortAudio у части пользователей
+  стабильно отдаёт полную цифровую тишину (Max amplitude: 0), тогда как
+  `arecord -D pulse` тот же самый микрофон пишет корректно.
+  Windows — arecord не существует, там поток идёт через sounddevice
+  (PortAudio) — на этой платформе альтернатив нет.
+
+Пробуждение демона: на Linux — SIGUSR1 (как раньше), на Windows —
+запись trigger-файла (platform_support.fire_trigger, работает везде).
 """
 
 import argparse
@@ -37,6 +39,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+import platform_support as plat
 
 try:
     import numpy as np
@@ -94,7 +98,7 @@ def load_config() -> dict:
 def open_arecord(cfg: dict) -> subprocess.Popen:
     """Запускает arecord как дочерний процесс, пишущий сырой s16le PCM
     в stdout — без WAV-заголовка (raw), чтобы читать поток чанками
-    напрямую, без парсинга контейнера."""
+    напрямую, без парсинга контейнера. Linux-only."""
     cmd = [
         "arecord",
         "-D", cfg["arecord_device"],
@@ -107,37 +111,32 @@ def open_arecord(cfg: dict) -> subprocess.Popen:
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
 
+def open_mic(cfg: dict):
+    """Открытый источник потокового PCM s16le моно. Linux — arecord (Popen),
+    Windows — sounddevice-стрим с интерфейсом .read(n)/.close()."""
+    if plat.IS_WINDOWS:
+        return plat.WindowsMicStream(cfg["sample_rate"])
+    return open_arecord(cfg)
+
+
 def notify(title: str, body: str, urgency: str = "normal"):
-    try:
-        import subprocess
-        subprocess.run(
-            ["notify-send", "-u", urgency, "-a", "Jarvis", title, body],
-            check=False,
-            timeout=5,
-        )
-    except Exception:
-        pass
+    plat.notify(title, body, urgency)
 
 
 def wake_jarvis():
-    """Шлёт SIGUSR1 в jarvis.py — идентично действию jarvis-trigger.sh."""
-    if not JARVIS_PID_FILE.exists():
-        logging.warning("jarvis.pid не найден — демон jarvis.py не запущен?")
-        notify("Jarvis", "Демон не запущен: systemctl --user status jarvis.service",
+    """Разбудить jarvis.py: SIGUSR1 на Linux, trigger-файл — везде."""
+    plat.fire_trigger()
+    logging.info("Разбудил jarvis.py (windows=%s)", plat.IS_WINDOWS)
+    if plat.IS_WINDOWS and not (STATE_DIR / "jarvis.pid").exists():
+        notify("Jarvis", "Демон не запущен: install-win.ps1 / jarvis.py",
                urgency="critical")
         return False
-    try:
-        pid = int(JARVIS_PID_FILE.read_text().strip())
-        os.kill(pid, signal.SIGUSR1)
-        logging.info("Разбудил jarvis.py (pid=%d) по wake-word", pid)
-        return True
-    except (ValueError, ProcessLookupError, PermissionError) as e:
-        logging.warning("Не смог разбудить jarvis.py: %s", e)
-        return False
+    return True
 
 
 def run_listener(cfg: dict, debug: bool):
     model_path = BASE_DIR / "models" / "wakeword" / cfg["model_path"]
+    model_path = plat.wakeword_model_on_windows(model_path)
     if not model_path.exists():
         sys.exit(
             f"Модель не найдена: {model_path}\n"
@@ -151,8 +150,11 @@ def run_listener(cfg: dict, debug: bool):
     # 0.4.x  -> Model(wakeword_model_paths=[...])                       (без inference_framework)
     # 0.6.x+ -> Model(wakeword_models=[...], inference_framework="tflite")
     # Пробуем новый API, откатываемся на старый при TypeError.
+    # На Windows всегда onnx: tflite-runtime там не ставится (Linux-only).
+    framework = plat.detect_wakeword_framework(model_path)
     try:
-        oww = OWWModel(wakeword_models=[str(model_path)], inference_framework="tflite")
+        oww = OWWModel(wakeword_models=[str(model_path)],
+                       inference_framework=framework)
     except TypeError:
         oww = OWWModel(wakeword_model_paths=[str(model_path)])
     model_name = list(oww.models.keys())[0]
@@ -166,24 +168,26 @@ def run_listener(cfg: dict, debug: bool):
     # Скользящее окно последних score (deque логичнее, но list+append быстрее).
     score_history: list[float] = []
 
-    logging.info("Слушаю микрофон через arecord (device=%s), порог=%.2f, "
+    logging.info("Слушаю микрофон (%s), порог=%.2f, "
                  "кулдаун=%.1fс, триггер=%d кадра подряд",
-                 cfg["arecord_device"], cfg["threshold"],
+                 ("sounddevice" if plat.IS_WINDOWS else f"arecord {cfg['arecord_device']}"),
+                 cfg["threshold"],
                  cfg["cooldown_seconds"], trigger_frames)
     notify("Jarvis", "Слушаю фоново: скажи «Джарвис» или нажми Super+J.")
 
-    proc = open_arecord(cfg)
+    source = open_mic(cfg)
     try:
         while True:
-            raw = proc.stdout.read(chunk_bytes)
+            raw = source.read(chunk_bytes)
             if not raw:
-                # arecord умер (например, гарнитура отключилась/сменился
-                # default source) — перезапускаем чтение через секунду
+                # Поток умер (гарнитура отключилась / сменился default
+                # source / сбой устройства) — перезапускаем через секунду
                 # вместо падения всего процесса.
-                logging.warning("arecord завершился неожиданно, перезапускаю через 1с")
-                proc.wait()
+                logging.warning("микрофон завершился неожиданно, перезапускаю через 1с")
+                if isinstance(source, subprocess.Popen):
+                    source.wait()
                 time.sleep(1.0)
-                proc = open_arecord(cfg)
+                source = open_mic(cfg)
                 continue
             if len(raw) < chunk_bytes:
                 # Неполный чанк на старте потока — просто ждём следующего.
@@ -219,7 +223,10 @@ def run_listener(cfg: dict, debug: bool):
                 score_history.clear()
                 oww.reset()
     finally:
-        proc.terminate()
+        if isinstance(source, subprocess.Popen):
+            source.terminate()
+        else:
+            source.close()
 
 
 def main():
