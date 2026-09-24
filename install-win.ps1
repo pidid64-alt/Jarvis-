@@ -74,24 +74,45 @@ Write-Host "Каталог: $Root"
 
 # --- 1. Python ---------------------------------------------------------------
 Write-Step 'Проверяю Python...'
-$pyCmd = Get-Command python -ErrorAction SilentlyContinue
-if (-not $pyCmd) {
+$PythonExe = $null
+$pyVer = $null
+foreach ($cand in @('py','python','python3')) {
+  $cmdInfo = Get-Command $cand -ErrorAction SilentlyContinue
+  if (-not $cmdInfo) { continue }
+  # Пропускаем заглушку Windows Store (WindowsApps\python.exe без реального интерпретатора)
+  if ($cmdInfo.Source -like '*WindowsApps*') {
+    try { $probe = & $cand -c "print('ok')" 2>$null } catch { $probe = $null }
+    if (-not $probe -or $LASTEXITCODE -ne 0) { continue }
+  }
+  try {
+    $out = & $cand -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $out) {
+      $out = $out.Trim()
+      if ($out -match '^\d+\.\d+$') {
+        $PythonExe = $cand
+        $pyVer = $out
+        break
+      }
+    }
+  } catch { }
+}
+if (-not $PythonExe -or -not $pyVer) {
   Write-Host 'Python не найден. Поставь Python 3.11–3.13 с python.org (галочка "Add to PATH").' -ForegroundColor Red
+  Write-Host '  Проверь в этом же окне: py --version  или  python --version' -ForegroundColor Yellow
   Write-Host 'Важно: 3.14 пока не подходит — под неё нет webrtcvad-wheels.' -ForegroundColor Yellow
   exit 1
 }
-$pyVer = & python -c "import sys; print('%d.%d' % sys.version_info[:2])"
 $pyMajor, $pyMinor = $pyVer.Split('.')
 if ([int]$pyMajor -ne 3 -or [int]$pyMinor -lt 11 -or [int]$pyMinor -gt 13) {
-  Write-Host "Найден Python $pyVer — нужен 3.11, 3.12 или 3.13 (webrtcvad-wheels)." -ForegroundColor Red
+  Write-Host "Найден Python $pyVer ($PythonExe) — нужен 3.11, 3.12 или 3.13 (webrtcvad-wheels)." -ForegroundColor Red
   exit 1
 }
-Write-Host "   Python $pyVer — ок"
+Write-Host "   Python $pyVer ($PythonExe) — ок"
 
 # --- 2. venv + зависимости ---------------------------------------------------
 if (-not (Test-Path $Py)) {
   Write-Step 'Создаю venv...'
-  & python -m venv $Venv
+  & $PythonExe -m venv $Venv
   if ($LASTEXITCODE -ne 0) { Write-Host 'venv не создался.' -ForegroundColor Red; exit 1 }
 }
 Write-Step 'Ставлю зависимости в venv (займёт минуту-другую)...'
