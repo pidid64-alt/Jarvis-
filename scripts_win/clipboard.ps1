@@ -1,4 +1,4 @@
-param([string]$Action = 'read')
+﻿param([string]$Action = 'read')
 $ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 function Get-Clip { (Get-Clipboard -Raw -ErrorAction SilentlyContinue) }

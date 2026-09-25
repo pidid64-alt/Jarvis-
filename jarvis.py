@@ -37,6 +37,21 @@ from pathlib import Path
 
 import inbox_store
 import platform_support as plat
+
+def _win_no_window_kwargs():
+    if getattr(platform_support, 'IS_WINDOWS', False):
+        try:
+            creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            try:
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            except AttributeError:
+                startupinfo.wShowWindow = 0
+            return {"creationflags": creationflags, "startupinfo": startupinfo}
+        except Exception:
+            pass
+    return {}
 from recognition import SpeechBuffer, command_text, has_negation, normalize_text, phrase_spans
 
 try:
@@ -560,7 +575,8 @@ def match_commands_local(text: str, commands: list, threshold: float,
 def run_background(cfg: dict, cmd: dict):
     proc = subprocess.Popen(
         plat.substitute_placeholders(cmd["command"], BASE_DIR, STATE_DIR),
-        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        **_win_no_window_kwargs()
     )
 
     def watcher():
@@ -579,6 +595,7 @@ def execute_foreground(cmd: dict) -> str:
             shell=True,
             capture_output=True,
             timeout=cmd.get("timeout", 15),
+            **_win_no_window_kwargs(),
         )
         return plat.decode_output(result.stdout or result.stderr or b"").strip()
     except subprocess.TimeoutExpired:
@@ -641,7 +658,8 @@ def handle_command(cfg: dict, cmd: dict, score: float):
         speak(cfg, cmd.get("response", ""))
         subprocess.Popen(
             plat.substitute_placeholders(cmd["command"], BASE_DIR, STATE_DIR),
-            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            **_win_no_window_kwargs())
         return
 
     output = execute_foreground(cmd)
@@ -689,6 +707,7 @@ def handle_dictation(cfg: dict, cmd: dict):
             [dictation_script, text],
             shell=False,
             timeout=cmd.get("dictation_timeout", 10),
+            **_win_no_window_kwargs(),
         )
     except subprocess.TimeoutExpired:
         logging.error("Dictation script timeout")
@@ -835,7 +854,7 @@ def try_llm_route(cfg: dict, text: str) -> str | None:
         logging.debug("LLM: model не задан в config.json, fallback")
         return None
     api_key_env = llm_cfg.get("api_key_env", "OMNIROUTE_API_KEY")
-    api_key = os.environ.get(api_key_env, "")
+    api_key = os.environ.get(api_key_env, "") or os.environ.get("OPENROUTER_API_KEY", "") or os.environ.get("OMNIROUTE_API_KEY", "")
     if not api_key:
         logging.debug("LLM: env %s не задан, fallback", api_key_env)
         return None

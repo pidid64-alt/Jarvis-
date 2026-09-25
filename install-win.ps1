@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Jarvis Control Core — установка на Windows 10/11 (x64).
 
@@ -74,24 +74,45 @@ Write-Host "Каталог: $Root"
 
 # --- 1. Python ---------------------------------------------------------------
 Write-Step 'Проверяю Python...'
-$pyCmd = Get-Command python -ErrorAction SilentlyContinue
-if (-not $pyCmd) {
+$PythonExe = $null
+$pyVer = $null
+foreach ($cand in @('py','python','python3')) {
+  $cmdInfo = Get-Command $cand -ErrorAction SilentlyContinue
+  if (-not $cmdInfo) { continue }
+  # Пропускаем заглушку Windows Store (WindowsApps\python.exe без реального интерпретатора)
+  if ($cmdInfo.Source -like '*WindowsApps*') {
+    try { $probe = & $cand -c "print('ok')" 2>$null } catch { $probe = $null }
+    if (-not $probe -or $LASTEXITCODE -ne 0) { continue }
+  }
+  try {
+    $out = & $cand -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $out) {
+      $out = $out.Trim()
+      if ($out -match '^\d+\.\d+$') {
+        $PythonExe = $cand
+        $pyVer = $out
+        break
+      }
+    }
+  } catch { }
+}
+if (-not $PythonExe -or -not $pyVer) {
   Write-Host 'Python не найден. Поставь Python 3.11–3.13 с python.org (галочка "Add to PATH").' -ForegroundColor Red
+  Write-Host '  Проверь в этом же окне: py --version  или  python --version' -ForegroundColor Yellow
   Write-Host 'Важно: 3.14 пока не подходит — под неё нет webrtcvad-wheels.' -ForegroundColor Yellow
   exit 1
 }
-$pyVer = & python -c "import sys; print('%d.%d' % sys.version_info[:2])"
 $pyMajor, $pyMinor = $pyVer.Split('.')
 if ([int]$pyMajor -ne 3 -or [int]$pyMinor -lt 11 -or [int]$pyMinor -gt 13) {
-  Write-Host "Найден Python $pyVer — нужен 3.11, 3.12 или 3.13 (webrtcvad-wheels)." -ForegroundColor Red
+  Write-Host "Найден Python $pyVer ($PythonExe) — нужен 3.11, 3.12 или 3.13 (webrtcvad-wheels)." -ForegroundColor Red
   exit 1
 }
-Write-Host "   Python $pyVer — ок"
+Write-Host "   Python $pyVer ($PythonExe) — ок"
 
 # --- 2. venv + зависимости ---------------------------------------------------
 if (-not (Test-Path $Py)) {
   Write-Step 'Создаю venv...'
-  & python -m venv $Venv
+  & $PythonExe -m venv $Venv
   if ($LASTEXITCODE -ne 0) { Write-Host 'venv не создался.' -ForegroundColor Red; exit 1 }
 }
 Write-Step 'Ставлю зависимости в venv (займёт минуту-другую)...'
@@ -101,6 +122,18 @@ if ($LASTEXITCODE -ne 0) { Write-Host 'pip не смог поставить ба
 if ($WakewordModels) {
   Write-Step 'Нашёл модель wake-word — ставлю openwakeword...'
   & $Py -m pip install --quiet openwakeword
+}
+# Workaround piper-tts 1.8.0 Windows wheel hardcodes D:/a/piper1-gpl/.../espeak-ng-data
+$EspeakSrc = Get-ChildItem (Join-Path $Venv "Lib\site-packages\piper") -Recurse -Filter "phontab" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($EspeakSrc) {
+  $HardcodedDst = "D:/a/piper1-gpl/piper1-gpl/_skbuild/win-amd64-3.9/cmake-build/espeak_ng-install/share/espeak-ng-data"
+  if (-not (Test-Path $HardcodedDst)) {
+    try {
+      New-Item -ItemType Directory -Force -Path $HardcodedDst | Out-Null
+      Copy-Item (Join-Path (Split-Path $EspeakSrc.FullName -Parent) "*") $HardcodedDst -Recurse -Force
+      Write-Step "Пропатчил espeak-ng-data для piper (workaround D:/a/...)"
+    } catch { Write-Host "Не смог пропатчить espeak-ng-data: $_" -ForegroundColor Yellow }
+  }
 }
 
 # --- 3. whisper-server.exe ---------------------------------------------------
@@ -158,7 +191,9 @@ if (-not (Test-Path $EnvFile)) {
   @(
     '# Ключи для LLM-маршрута (по строке KEY=VALUE). Без ключа голосовые'
     '# команды из белого списка работают как обычно, LLM просто выключен.'
-    '# OPENROUTER_API_KEY=sk-or-...'
+    '# Для OmniRoute (дефолт): OMNIROUTE_API_KEY=sk-...'
+    '# Для OpenRouter: OPENROUTER_API_KEY=sk-or-...'
+    '# Не забудь выставить model и base_url в config.json под свой OmniRoute'
   ) | Set-Content -Path $EnvFile -Encoding UTF8
   Write-Step "Создан шаблон env-файла: $EnvFile"
 }
@@ -213,8 +248,8 @@ if (-not $SkipTasks) {
 3) Дальше — Win+J (хоткей jarvis-hotkey), дождись уведомления
    «Слушаю…», говори команду. Список — commands-win.json.
 
-Ключ LLM (опционально): впиши OPENROUTER_API_KEY=... в
-  $EnvFile
+Ключ LLM (опционально): впиши OMNIROUTE_API_KEY=... (или OPENROUTER_API_KEY) в
+  $EnvFile и выставь model/base_url в config.json
 и перезапусти задачу jarvis.
 
 Статус задач:
