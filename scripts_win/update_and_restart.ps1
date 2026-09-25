@@ -92,7 +92,7 @@ if (-not $failed) {
   if ($ok -eq $count) {
     Write-Output "Сэр, перезапустил все $ok сервисов — $($names -join ', ')."
   } elseif ($ok -gt 0) {
-    Write-Output "Сэр, перезапустил $ok из $count: $($names | Where-Object { $_ -notin $failList } | Join-String -Separator ', '). Не завелись: $($failList -join ', ')."
+    Write-Output "Сэр, перезапустил ${ok} из ${count}: $($names | Where-Object { $_ -notin $failList } | Join-String -Separator ', '). Не завелись: $($failList -join ', ')."
   } else {
     Write-Output "Сэр, ни один из $count не завёлся: $($names -join ', ') — нужен ручной взгляд."
   }
