@@ -39,7 +39,7 @@ import inbox_store
 import platform_support as plat
 
 def _win_no_window_kwargs():
-    if getattr(platform_support, 'IS_WINDOWS', False):
+    if getattr(plat, 'IS_WINDOWS', False):
         try:
             creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
             startupinfo = subprocess.STARTUPINFO()
