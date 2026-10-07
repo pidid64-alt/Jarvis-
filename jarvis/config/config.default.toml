@@ -1,0 +1,105 @@
+# Настройки Jarvis — единственный файл настроек.
+# Секреты здесь НЕ пишутся: вместо значения укажите ссылку ${ИМЯ_ПЕРЕМЕННОЙ},
+# а само значение положите в файл .env рядом (он не попадает в git).
+# Этот файл можно править руками или через окно Jarvis → «Настройки».
+
+[assistant]
+name = "Jarvis"
+language = "ru"            # ru или en; свой язык — положите xx.json в config/i18n
+theme = "dark"             # dark | light
+max_extra_words = 6        # сколько «лишних» слов допустимо вокруг точной фразы команды
+match_threshold = 0.72     # порог нечёткого совпадения (после LLM-маршрута)
+ambiguity_margin = 0.06    # минимальный отрыв от второй команды, иначе «не понял»
+
+[voice]
+enabled = true             # озвучка ответов и (в GUI/демоне) микрофон
+record_mode = "vad"        # vad — запись до паузы, fixed — фиксированные секунды
+sample_rate = 16000
+record_seconds = 4.0
+max_record_seconds = 12.0
+silence_seconds = 0.9
+wait_speech_seconds = 4.0
+start_speech_seconds = 0.09
+min_speech_seconds = 0.18
+vad_aggressiveness = 2
+beep = true
+
+[voice.wakeword]
+enabled = false            # слушать слово-активатор постоянно
+model = "{legacy}/models/wakeword/jarvis.onnx"
+threshold = 0.25
+cooldown_seconds = 3.0
+
+[hotkey]
+spec = "Super+J"           # Windows: "Win+J"
+enabled = true
+
+[stt]
+provider = "whisper.cpp"
+mode = "on_demand"         # on_demand — поднимать по требованию, always — держать, off — выключено
+url = "http://127.0.0.1:8081/inference"
+model = "{legacy}/models/ggml-base-q5_1.bin"
+server_command = "bash {legacy}/whisper.cpp/build/bin/whisper-server --host 127.0.0.1 --port 8081 -m {legacy}/models/ggml-base-q5_1.bin -l ru"
+cli_command = ""
+timeout_seconds = 30
+max_retries = 1
+idle_timeout = 300
+no_speech_threshold = 0.6
+prompt = ""
+
+[tts]
+provider = "piper"
+mode = "on_demand"
+url = "http://127.0.0.1:5000/synthesize"
+voice = "ru_RU-dmitri-medium"
+data_dir = "{legacy}/models"
+server_command = "{python} -m piper.http_server --host 127.0.0.1 --port 5000 -m ru_RU-dmitri-medium --data-dir {legacy}/models"
+cli_command = ""
+timeout_seconds = 20
+idle_timeout = 300
+
+[llm]
+enabled = true             # свободная речь и уточнения; без ключа просто выключается
+base_url = "http://localhost:20128/v1"
+api_key = "${JARVIS_LLM_KEY}"
+model = ""
+timeout_seconds = 8
+max_retries = 1
+max_tokens = 400
+temperature = 0.2
+extra_rules = ""
+
+[search]
+enabled = true
+max_results = 5
+timeout_seconds = 12
+
+[permissions]
+# restricted — опасные действия всегда требуют подтверждения (рекомендуется)
+# normal     — подтверждаются только действия с флагом confirm
+mode = "restricted"
+
+[skills]
+# id навыков, которые выключены пользователем (правит окно «Навыки»)
+disabled = []
+
+[autonomy]
+enabled = true
+quiet_hours_start = "23:00"
+quiet_hours_end = "07:00"
+min_notify_interval_seconds = 300
+# Правила переносятся миграцией из старого autonomy.json либо задаются вручную.
+rules = []
+
+[api]
+enabled = true             # локальный API для окна/трея: 127.0.0.1, токен в файле
+host = "127.0.0.1"
+port = 0                   # 0 — выбрать свободный порт автоматически
+token_file = "{state}/api.token"
+
+[ui]
+close_to_tray = true
+start_minimized = false
+
+[log]
+level = "info"             # debug | info | warning | error

@@ -1,0 +1,46 @@
+{
+  "id": "web_search",
+  "name": "Поиск в интернете",
+  "description": "Ищет информацию в интернете и отвечает коротко, либо открывает сайт в браузере.",
+  "version": "1.0",
+  "entry": "handler.py",
+  "permissions": {
+    "shell": false,
+    "network": true,
+    "notify": false
+  },
+  "examples": [
+    "найди погоду",
+    "что такое квантовая запутанность",
+    "открой сайт example.com"
+  ],
+  "actions": [
+    {
+      "id": "search",
+      "phrases": [
+        "найди",
+        "поищи",
+        "погугли",
+        "что такое",
+        "найди информацию"
+      ],
+      "description": "Найти информацию и коротко ответить",
+      "capture": true,
+      "tags": [
+        "network"
+      ]
+    },
+    {
+      "id": "open_site",
+      "phrases": [
+        "открой сайт",
+        "открой ссылку"
+      ],
+      "description": "Открыть сайт в браузере",
+      "capture": true,
+      "tags": [
+        "network"
+      ]
+    }
+  ]
+}

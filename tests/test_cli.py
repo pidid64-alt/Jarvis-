@@ -1,0 +1,162 @@
+"""Тесты командной строки: запуск, вывод, отсутствие секретов в консоли."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def run_cli(home: Path, *args: str, input_text: str | None = None, timeout: int = 120):
+    env = dict(os.environ)
+    env["JARVIS_HOME"] = str(home)
+    env["PYTHONPATH"] = str(PROJECT_ROOT)
+    env.pop("JARVIS_LLM_KEY", None)
+    return subprocess.run(
+        [sys.executable, "-m", "jarvis", *args],
+        capture_output=True, text=True, env=env, cwd=str(PROJECT_ROOT),
+        input=input_text, timeout=timeout,
+    )
+
+
+class CliTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="jarvis-cli-")
+        self.home = Path(self._tmp.name)
+        (self.home / "config").mkdir(parents=True, exist_ok=True)
+        (self.home / "state").mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_version_and_help(self):
+        result = run_cli(self.home, "version")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Jarvis", result.stdout)
+
+        result = run_cli(self.home, "--help")
+        for command in ("run", "ask", "status", "skills", "config", "secret", "migrate"):
+            self.assertIn(command, result.stdout)
+
+    def test_status_creates_config_and_reports_providers(self):
+        result = run_cli(self.home, "status")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Навыков:", result.stdout)
+        self.assertIn("llm:", result.stdout)
+        # ключ не задан — так и должно быть написано, без значений
+        self.assertNotIn("sk-", result.stdout)
+        self.assertTrue((self.home / "config" / "config.toml").exists())
+
+    def test_skills_lists_bundled_skills(self):
+        result = run_cli(self.home, "skills")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for skill in ("dialogue", "time_date", "system_health", "power"):
+            self.assertIn(skill, result.stdout)
+
+    def test_ask_text_command(self):
+        result = run_cli(self.home, "ask", "сколько времени", "--no-speak")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stdout, r"\d{1,2}:\d{2}")
+
+    def test_ask_unknown_phrase_is_polite(self):
+        """Непонятая фраза — вежливый ответ и код 1 (удобно скриптам)."""
+        result = run_cli(self.home, "ask", "свари мне борщ из синей капусты", "--no-speak")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("понял", result.stdout.lower())
+
+    def test_ask_empty_text_is_rejected(self):
+        result = run_cli(self.home, "ask", "   ", "--no-speak")
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_ask_dangerous_without_confirmation_is_cancelled(self):
+        result = run_cli(self.home, "ask", "выключи компьютер", "--no-speak", input_text="нет\n")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Отменяю", result.stdout)
+
+    def test_ask_dangerous_confirmed_by_word_yes(self):
+        result = run_cli(self.home, "ask", "перезагрузи компьютер", "--no-speak", input_text="да\n")
+        # в песочнице нет systemd — команда честно сообщает об ошибке, но подтверждение принято
+        self.assertIn("да", result.stdout.lower() + result.stderr.lower())
+        self.assertNotIn("Отменяю", result.stdout)
+
+    def test_config_get_and_path(self):
+        result = run_cli(self.home, "config", "path")
+        self.assertIn("config.toml", result.stdout)
+
+        result = run_cli(self.home, "config", "get", "permissions.mode")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("restricted", result.stdout)
+
+    def test_secret_set_stores_only_in_env_and_masks_output(self):
+        run_cli(self.home, "status")  # создаёт config.toml, как при первом запуске
+        result = run_cli(self.home, "secret", "set", "JARVIS_LLM_KEY", input_text="sk-or-v1-abcdef123456\n")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn("sk-or-v1-abcdef123456", result.stdout)
+        candidates = [self.home / "config" / ".env", self.home / ".env"]
+        env_file = next((path for path in candidates if path.exists()), None)
+        self.assertIsNotNone(env_file, "секрет должен лежать в .env")
+        self.assertIn("JARVIS_LLM_KEY=sk-or-v1-abcdef123456", env_file.read_text(encoding="utf-8"))
+        config_text = (self.home / "config" / "config.toml").read_text(encoding="utf-8")
+        self.assertNotIn("sk-or-v1-abcdef123456", config_text)
+        if os.name != "nt":
+            import stat
+            self.assertEqual(stat.S_IMODE(env_file.stat().st_mode), 0o600)
+
+        listing = run_cli(self.home, "secret", "list")
+        self.assertNotIn("sk-or-v1-abcdef123456", listing.stdout)
+        self.assertIn("задан", listing.stdout)
+
+    def test_logs_command_masks_secrets(self):
+        run_cli(self.home, "ask", "привет", "--no-speak")
+        result = run_cli(self.home, "logs", "--limit", "20")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("привет", result.stdout)
+
+    def test_migrate_dry_run_does_not_touch_files(self):
+        result = run_cli(self.home, "migrate", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Действий перенесено", result.stdout)
+        self.assertIn("пробный прогон", result.stdout.lower())
+        # встроенные навыки перекрывают часть старых команд — это видно в отчёте
+        self.assertIn("Заменено встроенными навыками", result.stdout)
+        self.assertFalse((self.home / "config" / "skills").exists())
+
+    def test_doctor_like_status_has_no_tracebacks(self):
+        result = run_cli(self.home, "status")
+        self.assertNotIn("Traceback", result.stdout + result.stderr)
+        self.assertNotIn("Traceback", run_cli(self.home, "skills").stderr)
+
+
+class ImportHealthTests(unittest.TestCase):
+    """Пакет должен импортироваться целиком — это ловит забытые модули."""
+
+    def test_import_every_module(self):
+        import importlib
+        import pkgutil
+
+        import jarvis
+
+        modules = [name for _finder, name, _ispkg in pkgutil.walk_packages(jarvis.__path__, "jarvis.")]
+        self.assertGreater(len(modules), 20)
+        for name in modules:
+            with self.subTest(module=name):
+                importlib.import_module(name)
+
+    def test_pyproject_lists_existing_packages(self):
+        import tomllib
+
+        data = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        packages = data["tool"]["setuptools"]["packages"]
+        for package in packages:
+            path = PROJECT_ROOT / package.replace(".", "/")
+            self.assertTrue((path / "__init__.py").exists(), f"нет {path}/__init__.py")
+
+
+if __name__ == "__main__":
+    unittest.main()

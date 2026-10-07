@@ -1,0 +1,32 @@
+{
+  "id": "screenshot",
+  "name": "Снимок экрана",
+  "description": "Сохраняет снимок экрана в папку состояния Jarvis.",
+  "version": "1.0",
+  "entry": "handler.py",
+  "permissions": {
+    "shell": true,
+    "files": true,
+    "notify": false
+  },
+  "examples": [
+    "сделай скриншот",
+    "снимок экрана",
+    "заскринь экран"
+  ],
+  "actions": [
+    {
+      "id": "full",
+      "phrases": [
+        "сделай скриншот",
+        "снимок экрана",
+        "заскринь экран",
+        "скриншот всего экрана"
+      ],
+      "description": "Сделать снимок всего экрана",
+      "tags": [
+        "desktop"
+      ]
+    }
+  ]
+}
