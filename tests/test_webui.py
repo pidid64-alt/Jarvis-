@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import unittest
@@ -87,6 +88,41 @@ class FilesTests(unittest.TestCase):
         for kind in ("title", "heading", "body", "caption", "mono"):
             self.assertIn(f"--font-{kind}: {theme.FONTS[kind]['size']}px", css)
         self.assertIn(f"--radius-card: {theme.RADIUS['card']}px", css)
+
+    def test_hidden_wins_over_decorations(self):
+        """`hidden` обязан побеждать оформление, иначе элементы не спрятать.
+
+        У окна подтверждения и кнопки «Стоп» в CSS задан `display`, а правила
+        страницы перебивают встроенное браузерное правило `[hidden]`. Если
+        общее правило убрать, окно подтверждения повиснет на экране с самого
+        запуска: кнопки в нём нажимаются, но окно не исчезает.
+        """
+        css = (WEBUI / "app.css").read_text(encoding="utf-8")
+        rule = re.search(r"\[hidden\]\s*\{[^}]*display:\s*none\s*!important", css)
+        self.assertIsNotNone(rule, "в app.css нет правила [hidden] { display: none !important }")
+
+    def test_elements_hidden_by_script_have_their_own_display_rules(self):
+        """Каждый элемент, который скрипт прячет, действительно чем-то прячется."""
+        html = (WEBUI / "index.html").read_text(encoding="utf-8")
+        js = (WEBUI / "app.js").read_text(encoding="utf-8")
+        css = (WEBUI / "app.css").read_text(encoding="utf-8")
+        hidden_ids = set(re.findall(r'el\("([^"]+)"\)\.hidden\s*=', js))
+        self.assertTrue(hidden_ids, "скрипт ничего не прячет — проверке нечего делать")
+        global_rule = bool(re.search(r"\[hidden\]\s*\{[^}]*display:\s*none", css))
+        for element_id in hidden_ids:
+            tag = re.search(rf'<[^>]*id="{re.escape(element_id)}"[^>]*>', html)
+            self.assertIsNotNone(tag, f"элемента #{element_id} нет в разметке")
+            classes = re.search(r'class="([^"]+)"', tag.group(0))
+            if not classes or not global_rule:
+                continue
+            for name in classes.group(1).split():
+                # если у класса в CSS задан display — без общего правила элемент не спрятать
+                for block in re.findall(rf"\.{re.escape(name)}\s*\{{([^}}]*)\}}", css):
+                    if "display" in block:
+                        self.assertTrue(
+                            global_rule,
+                            f"#{element_id} (.{name}) прячется атрибутом hidden, "
+                            f"но в CSS задан display — нужно правило [hidden]")
 
     def test_interface_has_no_heavy_frameworks(self):
         """Никаких библиотек: страница работает на голом браузере."""

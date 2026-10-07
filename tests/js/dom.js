@@ -278,6 +278,13 @@ function parseHTML(html) {
         node.dataset[dataKey] = value;
       }
     }
+    // атрибуты без значения: hidden, checked, disabled и прочие такие же
+    for (const match of token.matchAll(/\s(hidden|checked|disabled|selected|required)(?=[\s>/])/g)) {
+      node.attributes[match[1]] = "";
+      if (match[1] === "hidden") node.hidden = true;
+      if (match[1] === "checked") node.checked = true;
+      if (match[1] === "disabled") node.disabled = true;
+    }
     stack[stack.length - 1].appendChild(node);
     if (!selfClosing) stack.push(node);
   }

@@ -102,6 +102,15 @@ body {
   overflow: hidden;
 }
 
+/* Атрибут hidden должен побеждать оформление.
+ *
+ * У окна подтверждения (.modal) и у кнопки «Стоп» (.icon-btn) задан display, а
+ * правила страницы перебивают встроенное браузерное правило [hidden]. Без этой
+ * строки окно подтверждения висело бы на экране с самого запуска: кнопки в нём
+ * нажимались бы, но окно не исчезало — и окно ассистента выглядело зависшим.
+ */
+[hidden] { display: none !important; }
+
 .sprite { position: absolute; width: 0; height: 0; }
 
 svg { width: 18px; height: 18px; flex: none; }
@@ -465,8 +474,9 @@ select:focus, input:focus { border-color: var(--accent); outline: 2px solid colo
 .modal {
   position: fixed; inset: 0; z-index: 20;
   display: grid; place-items: center;
-  background: rgba(0, 0, 0, .45);
-  backdrop-filter: blur(2px);
+  /* просто затемнение: размытие фона (backdrop-filter) на слабой видеокарте
+     заметно тормозит перерисовку, а пользы почти не даёт */
+  background: rgba(0, 0, 0, .5);
 }
 .modal-card {
   width: min(440px, 92vw);

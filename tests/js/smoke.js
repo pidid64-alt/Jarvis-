@@ -93,6 +93,9 @@ async function main() {
   await tick(300);
 
   check("страница запустилась", true);
+  check("окно подтверждения не висит само по себе",
+        document.getElementById("modal").hidden === true,
+        `hidden=${document.getElementById("modal").hidden}`);
 
   // --- токен ---------------------------------------------------------------
   check("токен убран из адреса", global.sessionStorage.getItem("jarvis-token") === token,
