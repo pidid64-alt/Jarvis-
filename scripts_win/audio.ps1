@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $devices = @(Get-CimInstance Win32_SoundDevice -ErrorAction SilentlyContinue)
 Write-Output "Аудио устройств: $($devices.Count)."

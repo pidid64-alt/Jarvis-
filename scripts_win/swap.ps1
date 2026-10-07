@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 # Подкачка (файл подкачки) через WMI
 $pages = @(Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue)

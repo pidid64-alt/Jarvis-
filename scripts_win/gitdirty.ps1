@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $root = $env:JARVIS_GIT_SEARCH_DIRS
 if (-not $root) { $root = $env:USERPROFILE }

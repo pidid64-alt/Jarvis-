@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $feed = if ($env:JARVIS_NEWS_FEED_URL) { $env:JARVIS_NEWS_FEED_URL } else { "https://lenta.ru/rss/last24" }
 $count = if ($env:JARVIS_NEWS_COUNT) { [int]$env:JARVIS_NEWS_COUNT } else { 5 }

@@ -1,4 +1,4 @@
-param([string]$Action = 'start')
+﻿param([string]$Action = 'start')
 $ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 if ($Action -eq 'start') {

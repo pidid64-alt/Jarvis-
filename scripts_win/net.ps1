@@ -1,4 +1,4 @@
-param([string]$Action = 'status')
+﻿param([string]$Action = 'status')
 $ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 switch ($Action) {

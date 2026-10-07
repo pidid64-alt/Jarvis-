@@ -10,6 +10,19 @@ import json
 import os
 import shutil
 import subprocess
+import os
+
+def _win_no_window_kwargs():
+    if os.name == "nt":
+        try:
+            creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            return {"creationflags": creationflags, "startupinfo": startupinfo}
+        except Exception:
+            pass
+    return {}
 from pathlib import Path
 
 
@@ -116,7 +129,7 @@ def _battery_windows() -> dict:
 
 def _cpu_temp_posix() -> dict:
     result = subprocess.run(["sensors", "-j"], capture_output=True, text=True,
-                            check=True, timeout=5)
+                            check=True, timeout=5, **_win_no_window_kwargs())
     data = json.loads(result.stdout)
     values = []
     for chip, groups in data.items():

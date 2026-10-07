@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $dir = Join-Path $env:USERPROFILE '.ssh'
 $pub = @(Get-ChildItem -Path $dir -Filter '*.pub' -ErrorAction SilentlyContinue)

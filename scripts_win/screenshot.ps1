@@ -1,4 +1,4 @@
-param([string]$Mode = 'full')
+﻿param([string]$Mode = 'full')
 $ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 Add-Type -AssemblyName System.Windows.Forms

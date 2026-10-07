@@ -3491,6 +3491,68 @@
     "system",
     "security"
    ]
+  },
+  {
+   "id": "update_and_restart",
+   "phrases": [
+    "обнови всё и перезапусти",
+    "найди обновы и перезапусти всё",
+    "проверь обновления и перезапусти всё",
+    "установи обновления и перезапусти",
+    "обнови систему и перезапусти сервисы",
+    "найди обновления и перезапусти все",
+    "поищи обновы и перезапусти сервисы"
+   ],
+   "command": "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{base}\\scripts_win\\update_and_restart.ps1\"",
+   "response": "",
+   "speak_output": true,
+   "timeout": 600,
+   "description": "Найти обновления (winget), установить и перезапустить упавшие сервисы. Говорит весело 'Сэр, ...'. Перезагрузка только по запросу.",
+   "tags": [
+    "system",
+    "package"
+   ]
+  },
+  {
+   "id": "update_and_restart_reboot",
+   "phrases": [
+    "обнови всё и перезагрузи",
+    "найди обновы и перезагрузи компьютер",
+    "установи обновления и перезагрузи",
+    "обнови систему и перезагрузи всё"
+   ],
+   "command": "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{base}\\scripts_win\\update_and_restart.ps1\" -AutoReboot",
+   "response": "Запускаю обновления с перезагрузкой, Сэр.",
+   "speak_output": true,
+   "speak_before": true,
+   "timeout": 600,
+   "confirm": true,
+   "confirm_prompt": "Точно обновить всё и перезагрузить? Скажи да.",
+   "description": "Обновить всё и перезагрузить если нужно (с авто-ребутом). Требует подтверждения.",
+   "tags": [
+    "system",
+    "package",
+    "dangerous"
+   ]
+  },
+  {
+   "id": "restart_all_services",
+   "phrases": [
+    "перезапусти все сервисы",
+    "перезапусти упавшие сервисы",
+    "рестарт всех сервисов",
+    "почини все сервисы",
+    "перезапусти сервисы",
+    "оживи сервисы"
+   ],
+   "command": "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{base}\\scripts_win\\update_and_restart.ps1\" -OnlyServices",
+   "response": "",
+   "speak_output": true,
+   "timeout": 120,
+   "description": "Перезапустить все упавшие Auto-сервисы (без проверки обновлений). Сэр-стайл.",
+   "tags": [
+    "system"
+   ]
   }
  ]
 }

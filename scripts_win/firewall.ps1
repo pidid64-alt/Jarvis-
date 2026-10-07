@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $profiles = Get-NetFirewallProfile -ErrorAction SilentlyContinue
 if (-not $profiles) { Write-Output "Файрвол недоступен (нужны права администратора)."; exit 0 }

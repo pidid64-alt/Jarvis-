@@ -24,6 +24,22 @@ from pathlib import Path
 
 IS_WINDOWS = os.name == "nt"
 
+def _win_no_window_kwargs():
+    """CREATE_NO_WINDOW + STARTUPINFO SW_HIDE — убирает мерцающие консоли на Windows."""
+    if IS_WINDOWS:
+        try:
+            creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            try:
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            except AttributeError:
+                startupinfo.wShowWindow = 0
+            return {"creationflags": creationflags, "startupinfo": startupinfo}
+        except Exception:
+            pass
+    return {}
+
 BASE_DIR = Path(__file__).resolve().parent
 # Один и тот же путь на обеих платформах — проще документировать и скриптам.
 STATE_DIR = Path.home() / ".local" / "share" / "jarvis"
@@ -94,6 +110,7 @@ def notify(title: str, body: str, urgency: str = "normal"):
                  "-Title", str(title), "-Body", str(body), "-Urgency", urgency],
                 check=False, timeout=6,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                **_win_no_window_kwargs(),
             )
         except (OSError, subprocess.TimeoutExpired):
             pass
@@ -116,7 +133,11 @@ def play_wav(path: Path, timeout: float = 30) -> bool:
     if IS_WINDOWS:
         try:
             import winsound
-            winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_SYNC)
+            # SND_SYNC == 0 (default, синхронно), в Python 3.13 константа убрана — используем только SND_FILENAME
+            flags = getattr(winsound, 'SND_FILENAME', 0x00020000)
+            if hasattr(winsound, 'SND_SYNC'):
+                flags |= winsound.SND_SYNC
+            winsound.PlaySound(str(path), flags)
             return True
         except Exception as e:  # noqa: BLE001 — устройство может быть занято
             logging.warning("winsound не смог проиграть ответ: %s", e)
@@ -157,7 +178,8 @@ def beep(cfg: dict):
         return
     try:
         subprocess.run(beep_cmd, shell=True, check=False, timeout=3,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       **_win_no_window_kwargs())
     except subprocess.TimeoutExpired:
         pass
 

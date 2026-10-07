@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $boot=(Get-CimInstance Win32_OperatingSystem).LastBootUpTime
 $up=New-TimeSpan -Start $boot

@@ -1,4 +1,4 @@
-param([int]$Minutes = 5, [string]$Message = 'Время вышло!')
+﻿param([int]$Minutes = 5, [string]$Message = 'Время вышло!')
 $ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 # Таймер: порождаем отдельный скрытый powershell, который уснёт и покажет тост.

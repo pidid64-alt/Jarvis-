@@ -1,4 +1,4 @@
-param([string]$Action = 'up')
+﻿param([string]$Action = 'up')
 $ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $cur = $null

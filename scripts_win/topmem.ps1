@@ -1,4 +1,4 @@
-$ErrorActionPreference='SilentlyContinue'
+﻿$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 $top=Get-Process | Sort-Object WS -Descending | Select-Object -First 5
 $i=1; foreach ($p in $top){

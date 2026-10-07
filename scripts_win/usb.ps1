@@ -1,4 +1,4 @@
-param([string]$Action = 'list')
+﻿param([string]$Action = 'list')
 $ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
 if ($Action -eq 'eject') {
