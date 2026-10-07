@@ -70,6 +70,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("autonomy", help="прогнать автономные проверки один раз")
 
+    llm = sub.add_parser("llm", help="показать запрос к модели (и по желанию отправить)")
+    llm.add_argument("--text", default="", help="фраза для примера (по умолчанию «привет»)")
+    llm.add_argument("--send", action="store_true", help="действительно отправить и замерить время")
+
     gui = sub.add_parser("gui", help="открыть окно Jarvis (браузер в режиме приложения)")
     gui.add_argument("--tab", action="store_true", help="открыть обычной вкладкой, без режима приложения")
     gui.add_argument("--browser", default="", help="какой браузер использовать (edge, chrome, chromium…)")
@@ -302,6 +306,85 @@ def cmd_autonomy(args) -> int:
     return 0
 
 
+def cmd_llm(args) -> int:
+    """Показать (и по желанию отправить) запрос к модели — целиком, без секретов."""
+    import time as _time
+    from datetime import datetime
+
+    from ..core.planner import build_messages
+
+    assistant = _assistant(args.debug)
+    providers = assistant.providers
+    state = providers.llm.state()
+
+    print("Модель")
+    print(f"  сервис:  {state['base_url'] or '— не задан —'}")
+    print(f"  модель:  {state['model'] or '— не задана —'}")
+    print(f"  ключ:    {'задан, ' + state['key_masked'] if state['key_present'] else 'не задан'}")
+    print(f"  ожидание ответа: {providers.llm.timeout:.0f} с")
+    if not state["available"]:
+        print(f"  состояние: не готов — {state['reason']}")
+
+    text = (args.text or "привет").strip()
+    skills = assistant.registry.enabled(include_hidden=False)
+    messages = build_messages(
+        skills, text,
+        history_tail=[], pending=None,
+        now_str=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        assistant_name=str(assistant.config.get("assistant.name", "Jarvis")),
+        language=str(assistant.config.get("assistant.language", "ru")),
+        extra_rules=str(assistant.config.get("llm.extra_rules", "")),
+    )
+    payload = {
+        "model": state["model"] or "<модель из настроек>",
+        "messages": messages,
+        "max_tokens": int(assistant.config.get("llm.max_tokens", 400)),
+        "temperature": float(assistant.config.get("llm.temperature", 0.2)),
+        "response_format": {"type": "json_object"},
+    }
+    body = json.dumps(payload, ensure_ascii=False, indent=2)
+    chars = sum(len(item["content"]) for item in messages)
+
+    print()
+    print("Запрос")
+    print(f"  адрес:   POST {state['base_url']}/chat/completions")
+    print(f"  фраза:   «{text}»")
+    print(f"  действий в списке: {sum(len(skill.actions) for skill in skills)} "
+          f"(навыков: {len(skills)})")
+    print(f"  размер:  {chars} символов текста, {len(body.encode('utf-8'))} байт JSON")
+    print(f"  оценка:  ~{chars // 3} токенов промпта (по-русски это примерно "
+          f"{chars // 4}–{chars // 3} токенов)")
+    print("  заголовки: Authorization: Bearer <ключ не показываем>, "
+          "Content-Type: application/json")
+    print()
+    print("Тело запроса (то, что увидит в своём журнале локальная модель):")
+    print(body)
+
+    if not args.send:
+        print()
+        print("Запрос не отправлен. Добавьте --send, чтобы проверить ответ и время.")
+        assistant.shutdown()
+        return 0
+
+    print()
+    print(f"Отправляю и жду до {providers.llm.timeout:.0f} с…")
+    started = _time.monotonic()
+    try:
+        answer = providers.llm.chat(messages)
+    except JarvisError as exc:
+        elapsed = _time.monotonic() - started
+        print(f"Ошибка через {elapsed:.1f} с: {exc}")
+        if getattr(exc, "details", ""):
+            print(f"  подсказка: {exc.details}")
+        assistant.shutdown()
+        return 1
+    elapsed = _time.monotonic() - started
+    print(f"Ответ за {elapsed:.1f} с:")
+    print(answer)
+    assistant.shutdown()
+    return 0
+
+
 def cmd_gui(args) -> int:
     """Открыть окно Jarvis (локальный интерфейс в отдельном окне браузера)."""
     from .webapp import open_ui
@@ -334,6 +417,7 @@ COMMANDS = {
     "secret": cmd_secret,
     "migrate": cmd_migrate,
     "autonomy": cmd_autonomy,
+    "llm": cmd_llm,
     "gui": cmd_gui,
 }
 

@@ -35,6 +35,12 @@ class FilesTests(unittest.TestCase):
         for name in ("index.html", "app.css", "app.js", "favicon.svg"):
             self.assertTrue((WEBUI / name).is_file(), f"нет файла {name}")
 
+    def test_settings_expose_model_waiting_time(self):
+        """Ожидание ответа модели видно в настройках окна — иначе его не поднять."""
+        js = (WEBUI / "app.js").read_text(encoding="utf-8")
+        self.assertIn('"llm.timeout_seconds"', js)
+        self.assertIn('kind: "number"', js)
+
     def test_page_stays_local(self):
         """Ни одного обращения в интернет: только свои файлы и свой API."""
         html = (WEBUI / "index.html").read_text(encoding="utf-8")
@@ -281,6 +287,10 @@ class PageLogicTests(unittest.TestCase):
             "out.push(JSON.stringify(P.changedSettings(values, original)));"
             "out.push(P.t('skills.total', {total: 5, enabled: 4}));"
             "out.push(P.secretName('${MY_KEY}', 'JARVIS_LLM_KEY'));"
+            "out.push(P.numberValue('90', null));"
+            "out.push(P.numberValue('', null));"
+            "out.push(P.numberValue('abc', null));"
+            "out.push(P.numberValue('-5', 60));"
             "out.push(P.confirmationText(''));"
             "out.push(P.confirmationText('   '));"
             "out.push(P.confirmationText('Выключить компьютер? Подтверждаете?'));"
@@ -300,10 +310,12 @@ class PageLogicTests(unittest.TestCase):
         self.assertEqual(answer[13], "Навыков: 5 (включено 4)")
         self.assertEqual(answer[14], "MY_KEY")
         # окно подтверждения никогда не бывает пустым
-        self.assertIn("Разрешите", answer[15])
-        self.assertIn("Разрешите", answer[16])
-        self.assertEqual(answer[17], "Выключить компьютер? Подтверждаете?")
-        self.assertEqual(answer[18], "JARVIS_LLM_KEY")
+        # node отдаёт всё строкой через «|»: null превращается в пустое место
+        self.assertEqual(answer[15:19], ["90", "", "", "60"])
+        self.assertIn("Разрешите", answer[19])
+        self.assertIn("Разрешите", answer[20])
+        self.assertEqual(answer[21], "Выключить компьютер? Подтверждаете?")
+        self.assertEqual(answer[22], "JARVIS_LLM_KEY")
 
 
 class PageRunTests(unittest.TestCase):

@@ -23,15 +23,18 @@ class _Handler(BaseHTTPRequestHandler):
     delay = 0.0
 
     def do_POST(self):  # noqa: N802 - так требует http.server
-        if _Handler.delay:
-            import time
-            time.sleep(_Handler.delay)
+        # Сначала читаем и записываем тело, и только потом «думаем»: иначе
+        # незавершённый запрос не попадёт в счёт и тест не отличит повтор от
+        # одного запроса. Пауза нужна, чтобы вызвать таймаут у клиента.
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8") if length else ""
         try:
             _Handler.seen_bodies.append(json.loads(body) if body else {})
         except ValueError:
             _Handler.seen_bodies.append({"raw": body})
+        if _Handler.delay:
+            import time
+            time.sleep(_Handler.delay)
 
         if _Handler.fail_times > 0:
             _Handler.fail_times -= 1
@@ -51,7 +54,10 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def start_server() -> tuple[HTTPServer, str]:
-    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    from http.server import ThreadingHTTPServer
+
+    # потоки: тесты про повторы шлют второй запрос, пока первый ещё «думает»
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, f"http://127.0.0.1:{server.server_address[1]}"
@@ -188,6 +194,45 @@ class SearchProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TimeoutRetryTests(unittest.TestCase):
+    """Таймаут не повторяем: локальная модель в этот момент ещё считает ответ.
+
+    Если повторить запрос, её сервер отменит текущую задачу и начнёт заново —
+    именно это видно в журнале llama.cpp как отмена задачи.
+    """
+
+    def setUp(self):
+        _Handler.responses = []
+        _Handler.seen_bodies = []
+        _Handler.fail_times = 0
+        _Handler.delay = 0.0
+        self.server, self.url = start_server()
+        self.addCleanup(self.server.shutdown)
+
+    def test_timeout_is_not_retried_when_disabled(self):
+        _Handler.delay = 1.5
+        client = HttpClient(timeout=0.4, retries=2, retry_timeouts=False)
+        with self.assertRaises(ProviderTimeoutError):
+            client.post_json(f"{self.url}/slow", {"x": 1})
+        self.assertEqual(len(_Handler.seen_bodies), 1, "запрос ушёл повторно")
+
+    def test_timeout_is_retried_by_default(self):
+        _Handler.delay = 1.5
+        client = HttpClient(timeout=0.4, retries=1)
+        with self.assertRaises(ProviderTimeoutError):
+            client.post_json(f"{self.url}/slow", {"x": 1})
+        self.assertEqual(len(_Handler.seen_bodies), 2, "обычный сервис должен получить повтор")
+
+    def test_llm_timeout_message_explains_what_to_do(self):
+        _Handler.delay = 1.5
+        provider = LLMProvider(base_url=self.url, api_key="k", model="m", timeout=0.4, retries=2)
+        with self.assertRaises(ProviderTimeoutError) as caught:
+            provider.chat([{"role": "user", "content": "привет"}])
+        self.assertIn("не ответила", str(caught.exception))
+        self.assertIn("Ожидание ответа модели", getattr(caught.exception, "details", ""))
+        self.assertEqual(len(_Handler.seen_bodies), 1, "LLM не должен повторять по таймауту")
+
 
 class VoiceFlagTests(unittest.TestCase):
     def test_voice_enabled_is_a_plain_flag(self):

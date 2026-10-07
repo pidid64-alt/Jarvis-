@@ -11,6 +11,7 @@ from typing import Any
 from ..core import secrets
 from ..core.errors import (
     ProviderError,
+    ProviderTimeoutError,
     ProviderUnavailableError,
     SecretMissingError,
 )
@@ -32,7 +33,9 @@ class LLMProvider:
         self.enabled = enabled
         self.max_tokens = max_tokens
         self.temperature = temperature
-        self.client = HttpClient(timeout=timeout, retries=retries,
+        # retry_timeouts=False: повтор запроса к локальной модели — вредный:
+        # сервер отменяет текущую задачу и считает всё заново.
+        self.client = HttpClient(timeout=timeout, retries=retries, retry_timeouts=False,
                                  breaker=breaker or CircuitBreaker("llm", threshold=3, cooldown=60.0))
 
     # ------------------------------------------------------------------ state
@@ -65,6 +68,11 @@ class LLMProvider:
         """Обычный текстовый ответ — для пересказа результатов поиска."""
         return self._complete(messages, max_tokens=max_tokens, temperature=temperature, json_mode=False)
 
+    @property
+    def timeout(self) -> float:
+        """Сколько ждём ответа модели (настраивается в llm.timeout_seconds)."""
+        return float(self.client.timeout)
+
     def _complete(self, messages: list[dict[str, str]], *, max_tokens: int | None,
                   temperature: float | None, json_mode: bool) -> str:
         ready, reason = self.available()
@@ -85,8 +93,26 @@ class LLMProvider:
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
+        if any(ord(char) > 127 for char in self.api_key):
+            # Ключ уходит в заголовке, а там допустима только латиница: без этой
+            # проверки ошибка была бы непонятной («latin-1 codec can't encode»).
+            raise ProviderError(
+                "ключ модели содержит недопустимые символы",
+                details="в ключе допустимы только латинские буквы, цифры и знаки - _ . ~",
+            )
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        response = self.client.post_json(f"{self.base_url}/chat/completions", payload, headers=headers)
+        try:
+            response = self.client.post_json(f"{self.base_url}/chat/completions", payload,
+                                             headers=headers)
+        except ProviderTimeoutError as exc:
+            # Самая частая причина на слабой машине: модель просто не успела.
+            # Повторять нельзя — локальный сервер отменит текущую задачу и начнёт
+            # заново, поэтому честно говорим, что и где увеличить.
+            raise ProviderTimeoutError(
+                f"модель не ответила за {self.timeout:.0f} с",
+                details="увеличьте «Ожидание ответа модели» в настройках "
+                        "(Настройки → Модель и поиск) или возьмите модель поменьше",
+            ) from exc
         data = response.json()
         choices = (data or {}).get("choices") or []
         if not choices:

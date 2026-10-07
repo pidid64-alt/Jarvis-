@@ -14,6 +14,36 @@ from jarvis.core import paths, secrets, toml_edit
 from jarvis.core.config import Config, referenced_env_names, resolve_refs
 
 
+class OldDefaultFixTests(unittest.TestCase):
+    """Старое «ожидание ответа модели» 8 с правится один раз при загрузке."""
+
+    def setUp(self):
+        self.home = isolated_home()
+        self.home.__enter__()
+        self.addCleanup(lambda: self.home.__exit__(None, None, None))
+        paths.ensure_dirs()
+
+    def write_config(self, text: str) -> Path:
+        path = paths.config_path()
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_old_eight_seconds_is_raised(self):
+        path = self.write_config('[llm]\ntimeout_seconds = 8   # как было\nmodel = "x"\n')
+        config = Config.load()
+        self.assertEqual(config.get("llm.timeout_seconds"), 60)
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("timeout_seconds = 60", text)
+        self.assertIn("# как было", text, "комментарий пользователя потерялся")
+
+    def test_other_values_are_left_alone(self):
+        for value in (5, 30, 120):
+            with self.subTest(value=value):
+                path = self.write_config(f'[llm]\ntimeout_seconds = {value}\nmodel = "x"\n')
+                self.assertEqual(Config.load().get("llm.timeout_seconds"), value)
+                self.assertIn(f"timeout_seconds = {value}", path.read_text(encoding="utf-8"))
+
+
 class TomlEditTests(unittest.TestCase):
     SAMPLE = """# Заголовок файла, который нельзя терять
 [llm]

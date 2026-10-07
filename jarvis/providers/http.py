@@ -87,10 +87,17 @@ class HttpResult:
 class HttpClient:
     """Тонкая обёртка над urllib с повторами и предохранителем."""
 
-    def __init__(self, *, timeout: float = 10.0, retries: int = 1, breaker: CircuitBreaker | None = None):
+    def __init__(self, *, timeout: float = 10.0, retries: int = 1, breaker: CircuitBreaker | None = None,
+                 retry_timeouts: bool = True):
         self.timeout = timeout
         self.retries = max(0, retries)
         self.breaker = breaker
+        # Повтор после таймаута имеет смысл только для «мгновенных» сервисов.
+        # Локальная модель в этот момент всё ещё считает ответ: мы бы закрыли
+        # соединение, сервер отменил бы задачу, а повтор заставил бы его начать
+        # заново — на слабой машине это ровно то, что видно в его журнале как
+        # «task cancelled». Поэтому LLM повтор по таймауту выключает.
+        self.retry_timeouts = retry_timeouts
 
     # ------------------------------------------------------------------ verbs
     def get(self, url: str, *, headers: dict[str, str] | None = None, timeout: float | None = None) -> HttpResult:
@@ -147,6 +154,8 @@ class HttpClient:
             except Exception as exc:  # noqa: BLE001 - сеть бывает разной
                 last_error = ProviderError(str(exc))
 
+            if isinstance(last_error, ProviderTimeoutError) and not self.retry_timeouts:
+                break
             if attempt <= self.retries:
                 time.sleep(0.3 * attempt)
 

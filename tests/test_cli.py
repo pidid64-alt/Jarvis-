@@ -25,6 +25,45 @@ def run_cli(home: Path, *args: str, input_text: str | None = None, timeout: int 
     )
 
 
+class LlmCommandTests(unittest.TestCase):
+    """`jarvis llm` показывает, что уходит модели; ключ в вывод не попадает."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="jarvis-llm-")
+        self.home = Path(self._tmp.name)
+        (self.home / "config").mkdir(parents=True, exist_ok=True)
+        (self.home / "state").mkdir(parents=True, exist_ok=True)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_shows_request_without_sending_it(self):
+        result = run_cli(self.home, "llm")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for expected in ("Модель", "Запрос", "chat/completions", "messages",
+                         "навыков", "Запрос не отправлен"):
+            self.assertIn(expected, result.stdout, f"в выводе нет «{expected}»")
+
+    def test_key_value_never_shown(self):
+        env_home = self.home
+        import os
+        import subprocess
+        import sys
+
+        env = dict(os.environ)
+        env["JARVIS_HOME"] = str(env_home)
+        env["PYTHONPATH"] = str(PROJECT_ROOT)
+        env["JARVIS_LLM_KEY"] = "sk-очень-секретный-ключ"
+        result = subprocess.run([sys.executable, "-m", "jarvis", "llm"],
+                                capture_output=True, text=True, env=env,
+                                cwd=str(PROJECT_ROOT), timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("sk-очень-секретный-ключ", result.stdout + result.stderr)
+        self.assertIn("не показываем", result.stdout)
+
+    def test_help_lists_the_command(self):
+        result = run_cli(self.home, "--help")
+        self.assertIn("llm", result.stdout)
+
+
 class CliTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory(prefix="jarvis-cli-")

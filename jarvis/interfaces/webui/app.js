@@ -133,6 +133,13 @@ function journalRows(entries) {
   }));
 }
 
+/** Число из поля ввода: пустое или мусор — `fallback`. */
+function numberValue(raw, fallback) {
+  if (raw === "" || raw === null || raw === undefined) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 /** Что изменилось в настройках: пишем только изменённое. */
 function changedSettings(values, original) {
   const changes = [];
@@ -142,7 +149,7 @@ function changedSettings(values, original) {
   return changes;
 }
 
-const PURE = { LABELS, t, confirmationText, secretName, themeName, levelOf, bubbleClass, providerChips, journalRows, changedSettings };
+const PURE = { LABELS, t, confirmationText, numberValue, secretName, themeName, levelOf, bubbleClass, providerChips, journalRows, changedSettings };
 
 // ------------------------------------------------------------------ страница
 
@@ -464,6 +471,8 @@ if (typeof document !== "undefined") {
         { key: "llm.model", label: "Модель", kind: "text", note: "например gpt-4o-mini" },
         { key: "llm.base_url", label: "Адрес сервиса", kind: "text", note: "OpenAI-совместимый, обычно .../v1" },
         { key: "llm.enabled", label: "Пользоваться моделью", kind: "bool" },
+        { key: "llm.timeout_seconds", label: "Ожидание ответа модели, с", kind: "number",
+          note: "локальной модели нужно 30–120 с" },
         { key: "llm.api_key", label: "Ключ модели", kind: "secret" },
       ],
     },
@@ -557,6 +566,26 @@ if (typeof document !== "undefined") {
       return;
     }
 
+    if (row.kind === "number") {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.id = `set-${row.key}`;
+      input.min = "1";
+      input.max = "600";
+      input.step = "5";
+      input.value = String(numberValue(value, ""));
+      label.htmlFor = input.id;
+      state.original[row.key] = numberValue(value, null);
+      control.appendChild(input);
+      if (row.note) {
+        const hint = document.createElement("span");
+        hint.className = "muted";
+        hint.textContent = row.note;
+        control.appendChild(hint);
+      }
+      return;
+    }
+
     if (row.kind === "theme") {
       const select = document.createElement("select");
       for (const name of ["system", "dark", "light"]) {
@@ -633,7 +662,9 @@ if (typeof document !== "undefined") {
         if (row.kind === "secret") continue;
         const node = document.getElementById(`set-${row.key}`);
         if (!node) continue;
-        values[row.key] = row.kind === "bool" ? node.checked : node.value;
+        if (row.kind === "bool") values[row.key] = node.checked;
+        else if (row.kind === "number") values[row.key] = numberValue(node.value, null);
+        else values[row.key] = node.value;
       }
     }
     return values;

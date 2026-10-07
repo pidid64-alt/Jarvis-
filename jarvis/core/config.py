@@ -133,6 +133,40 @@ class Config:
         self.expected_env = sorted(set(referenced_env_names(self._raw)))
 
     # ------------------------------------------------------------------ load
+    @staticmethod
+    def _fix_old_defaults(merged: dict[str, Any], cfg_path: Path) -> dict[str, Any]:
+        """Разовая правка старых значений по умолчанию, которые мешали работать.
+
+        Сейчас таких одно: ожидание ответа модели. В первых настройках стояло
+        8 секунд — для локальной модели на слабой машине это гарантированный
+        обрыв: Jarvis бросал запрос, а сервер модели отменял задачу. Меняем
+        только точное старое значение, только в существующем файле и с записью
+        в журнал, чтобы это не выглядело самовольством.
+        """
+        from .logging_setup import get_logger
+
+        if not cfg_path.exists():
+            return merged
+        llm = merged.get("llm")
+        if not isinstance(llm, dict) or float(llm.get("timeout_seconds", 0) or 0) != 8.0:
+            return merged
+        try:
+            from . import toml_edit
+
+            text = cfg_path.read_text(encoding="utf-8")
+            cfg_path.write_text(toml_edit.set_value(text, "llm.timeout_seconds", 60),
+                                encoding="utf-8")
+        except Exception:  # noqa: BLE001 - настройки важнее правки, но и падать нельзя
+            get_logger("core.config").warning("не удалось поправить ожидание ответа модели",
+                                             exc_info=True)
+            llm["timeout_seconds"] = 60
+            return merged
+        llm["timeout_seconds"] = 60
+        get_logger("core.config").info(
+            "ожидание ответа модели увеличено с 8 до 60 с: локальной модели нужно больше "
+            "(изменить можно в настройках)")
+        return merged
+
     @classmethod
     def load(cls, path: Path | None = None, *, create: bool = True) -> "Config":
         cfg_path = Path(path) if path else (ensure_config_file() if create else paths.config_path())
@@ -150,6 +184,7 @@ class Config:
             except tomllib.TOMLDecodeError as exc:
                 raise ConfigError(f"{cfg_path}: {exc}") from exc
         merged = _deep_merge(defaults, raw)
+        merged = cls._fix_old_defaults(merged, cfg_path)
         resolved, missing = resolve_refs(merged)
         # Пути вида {state}/... раскрываем сразу: так ни один потребитель
         # настроек не получит в руки строку с нераскрытой подстановкой.
