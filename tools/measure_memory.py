@@ -144,31 +144,25 @@ SCENARIOS: dict[str, dict] = {
             "    print('MEM_READY: API на', api.port)"
         ),
     },
-    "gui_module": {
-        "title": "модуль окна импортирован (без Tkinter)",
-        "note": "накладные расходы кода окна, если окно не открывать",
+    "ui_server": {
+        "title": "ядро + окно (сервер интерфейса)",
+        "note": "страница открыта в браузере: ядро, API и раздача интерфейса",
         "code": (
-            "import jarvis.interfaces.gui  # noqa: F401\n"
-            "import jarvis.interfaces.tray  # noqa: F401\n"
-            "print('MEM_READY: модуль окна загружен')"
-        ),
-    },
-    "gui_window": {
-        "title": "окно открыто и работает",
-        "note": "только там, где есть Tkinter; окно открывается и закрывается само",
-        "requires_tk": True,
-        "code": (
-            "import threading, time\n"
+            "import urllib.request\n"
             "from tests.helpers import isolated_home\n"
             "with isolated_home():\n"
-            "    from jarvis.interfaces.gui import GuiApp, connect_or_start\n"
-            "    client, embedded = connect_or_start()\n"
-            "    app = GuiApp(client, tray=False, embedded=embedded)\n"
-            "    print('MEM_READY: окно открыто')\n"
-            "    threading.Timer(6.0, app.root.destroy).start()\n"
-            "    app.root.mainloop()\n"
-            "    if embedded:\n"
-            "        embedded[1].stop(); embedded[0].shutdown()"
+            "    from jarvis.core.assistant import create_assistant\n"
+            "    from jarvis.interfaces.api import LocalApi\n"
+            "    assistant = create_assistant()\n"
+            "    api = LocalApi(assistant)\n"
+            "    api.start()\n"
+            "    page = urllib.request.urlopen(f'{api.url}/ui/', timeout=5).read()\n"
+            "    for name in ('app.css', 'app.js'):\n"
+            "        urllib.request.urlopen(f'{api.url}/ui/{name}', timeout=5).read()\n"
+            "    request = urllib.request.Request(f'{api.url}/status',\n"
+            "                                     headers={'X-Jarvis-Token': api.token})\n"
+            "    urllib.request.urlopen(request, timeout=5).read()\n"
+            "    print('MEM_READY: окно отдано, страница', len(page), 'байт')"
         ),
     },
 }
@@ -234,23 +228,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="вывести JSON")
     args = parser.parse_args(argv)
 
-    have_tk = True
-    try:
-        import tkinter  # noqa: F401
-    except Exception:  # noqa: BLE001
-        have_tk = False
-
     names = args.only or list(SCENARIOS)
     results = []
     for name in names:
         scenario = SCENARIOS[name]
-        if scenario.get("requires_tk") and not have_tk:
-            results.append({
-                "name": name, "title": scenario["title"], "note": scenario["note"],
-                "rss_mb": None, "peak_mb": None, "threads": 0, "seconds": 0.0, "exit": None,
-                "error": "нет Tkinter: сценарий пропущен",
-            })
-            continue
         runs = [run_scenario(name) for _ in range(max(1, args.repeat))]
         best = min(runs, key=lambda item: item["rss_mb"] or 1e9)
         best["runs"] = len(runs)
@@ -260,8 +241,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(results, ensure_ascii=False, indent=2))
         return 0
 
-    with_tk = "есть" if have_tk else "нет"
-    print(f"Замер памяти Jarvis · Python {sys.version.split()[0]} · Tkinter: {with_tk} · "
+    print(f"Замер памяти Jarvis · Python {sys.version.split()[0]} · "
           f"{'Windows' if os.name == 'nt' else 'Linux'}")
     print(f"{'сценарий':<38}{'сейчас':>10}{'пик':>10}{'потоки':>8}")
     for item in results:

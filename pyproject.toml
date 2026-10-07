@@ -20,8 +20,6 @@ voice = [
 wakeword = ["openwakeword==0.6.0"]
 # Поиск в интернете (без него работает встроенный запасной поиск)
 search = ["ddgs==9.0.0"]
-# Значок в трее и иконки
-tray = ["pystray==0.19.5", "Pillow==10.4.0"]
 # Разработка и тесты
 dev = ["pytest==8.3.3"]
 
@@ -43,7 +41,14 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-jarvis = ["config/*.toml", "config/i18n/*.json", "skills/*/skill.json", "skills/*/handler.py"]
+# webui — окно ассистента: страница, стиль, скрипт и значок (обычные файлы, зависимостей нет)
+jarvis = [
+  "config/*.toml",
+  "config/i18n/*.json",
+  "skills/*/skill.json",
+  "skills/*/handler.py",
+  "interfaces/webui/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

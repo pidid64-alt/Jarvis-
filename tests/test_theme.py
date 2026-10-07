@@ -11,7 +11,7 @@ import re
 import unittest
 from pathlib import Path
 
-from jarvis.interfaces import gui, theme
+from jarvis.interfaces import theme
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -217,51 +217,43 @@ class TtkStyleTests(unittest.TestCase):
 
 
 class OneSourceOfTruthTests(unittest.TestCase):
-    """Стиль окна должен жить в теме, а не в коде окна."""
+    """Стиль живёт в теме, а не в коде интерфейса."""
 
-    def test_no_colors_in_window_code(self):
-        source = (PROJECT_ROOT / "jarvis" / "interfaces" / "gui.py").read_text(encoding="utf-8")
-        found = HEX.findall(source)
-        self.assertEqual(found, [], f"в gui.py появились цвета: {sorted(set(found))}")
+    def test_no_colors_in_core_modules(self):
+        """Палитра — только в theme.py; в остальных модулях цвета искать нечего."""
+        offenders = {}
+        for path in (PROJECT_ROOT / "jarvis").rglob("*.py"):
+            if path.name == "theme.py":
+                continue
+            found = HEX.findall(path.read_text(encoding="utf-8"))
+            if found:
+                offenders[str(path.relative_to(PROJECT_ROOT))] = sorted(set(found))
+        self.assertEqual(offenders, {}, f"цвета появились вне темы: {offenders}")
 
-    def test_no_fonts_or_paddings_in_window_code(self):
-        source = (PROJECT_ROOT / "jarvis" / "interfaces" / "gui.py").read_text(encoding="utf-8")
-        self.assertNotIn("TkDefaultFont", source)
-        self.assertNotIn("TkFixedFont", source)
-        self.assertIsNone(re.search(r"(?:padx|pady)=\d+", source),
-                          "в gui.py появились отступы числом — их место в шкале темы")
+    def test_theme_has_no_hardcoded_sizes_in_window_helpers(self):
+        """Шкалы заданы один раз: в theme.py нет отступов вида «6px»."""
+        source = (PROJECT_ROOT / "jarvis" / "interfaces" / "theme.py").read_text(encoding="utf-8")
+        self.assertNotIn("padx=", source)
+        self.assertNotIn("pady=", source)
 
-    def test_gui_reexports_theme_values(self):
-        self.assertIs(gui.PALETTES, theme.PALETTES)
-        self.assertEqual(gui.STATE_COLORS, theme.STATE_COLORS["dark"])
-        self.assertEqual(gui.SPACE, theme.SPACE)
-        self.assertEqual(gui.theme_palette("light"), theme.palette("light"))
-        self.assertEqual(gui.state_color("listening", "light"), theme.state_color("listening", "light"))
+    def test_interface_files_take_colors_from_theme(self):
+        """Страница интерфейса берёт палитру из темы (проверяет tests/test_webui.py)."""
+        css = (PROJECT_ROOT / "jarvis" / "interfaces" / "webui" / "app.css").read_text(encoding="utf-8")
+        for name in ("dark", "light"):
+            palette = theme.palette(name)
+            self.assertIn(palette["accent"], css)
+            self.assertIn(palette["text"], css)
+
+    def test_old_tkinter_window_is_gone(self):
+        """Tkinter из проекта убран — окно теперь локальная страница."""
+        self.assertFalse((PROJECT_ROOT / "jarvis" / "interfaces" / "gui.py").exists())
+        self.assertFalse((PROJECT_ROOT / "jarvis" / "interfaces" / "tray.py").exists())
+        source = (PROJECT_ROOT / "jarvis" / "interfaces" / "cli.py").read_text(encoding="utf-8")
+        self.assertNotIn("tkinter", source.lower())
 
     def test_theme_labels_are_translated(self):
         from jarvis.core.i18n import get_translator
 
         t = get_translator("ru")
-        self.assertEqual(gui.theme_label(t, "system"), t("gui.theme.system"))
-        self.assertEqual(gui.theme_label(t, "dark"), t("gui.theme.dark"))
         for name in ("system", "dark", "light"):
-            self.assertEqual(gui.theme_value(t, gui.theme_label(t, name)), name)
-        self.assertEqual(gui.theme_value(t, "light"), "light")   # значение из настроек тоже годится
-        self.assertEqual(gui.theme_value(t, "чепуха"), "system")
-
-    def test_checker_does_not_repeat_the_palette(self):
-        """Проверка контраста берёт цвета и функцию из темы, своей копии не держит."""
-        source = (PROJECT_ROOT / "tools" / "contrast_check.py").read_text(encoding="utf-8")
-        self.assertEqual(HEX.findall(source), [], "в contrast_check.py снова своя палитра")
-        self.assertIn("from jarvis.interfaces import theme", source)
-
-    def test_preview_uses_window_theme_for_adopted_direction(self):
-        """Макеты направления A рисуются палитрой из темы окна."""
-        source = (PROJECT_ROOT / "tools" / "style_preview.py").read_text(encoding="utf-8")
-        self.assertIn("from jarvis.interfaces import theme", source)
-        self.assertIn('window_palette("dark")', source)
-        self.assertIn("SPACE = dict(window_theme.SPACE)", source)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            self.assertNotEqual(t(f"gui.theme.{name}"), f"gui.theme.{name}")

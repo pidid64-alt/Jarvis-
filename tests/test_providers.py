@@ -188,3 +188,13 @@ class SearchProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class VoiceFlagTests(unittest.TestCase):
+    def test_voice_enabled_is_a_plain_flag(self):
+        from tests.helpers import make_assistant
+
+        with isolated_home():
+            assistant = make_assistant()
+            providers = assistant.providers
+            self.assertIsInstance(providers.voice_enabled, bool)
+        self.assertIn(providers.voice_enabled, (True, False))

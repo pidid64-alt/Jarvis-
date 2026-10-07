@@ -152,7 +152,9 @@ class Providers:
             log.warning("модель не ответила", exc_info=True)
             return None
 
+    @property
     def voice_enabled(self) -> bool:
+        """Включён ли голос (микрофон и озвучка) — спрашивают все интерфейсы."""
         return bool(self.config.get("voice.enabled", False))
 
     def speak(self, text: str, language: str | None = None) -> bool:

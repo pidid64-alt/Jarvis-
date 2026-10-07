@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="robots" content="noindex, nofollow">
+<title>Jarvis</title>
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- Значки рисуются тут же: ни сторонних наборов, ни лицензий на них -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-wave" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 10v4"/><path d="M9 7v10"/><path d="M13 9v6"/><path d="M17 5v14"/><path d="M21 10v4"/></g></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></g></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M3.6 11.3 20 4l-7.3 16.4-2.2-6.9z" fill="currentColor"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 9.5h3L11 6v12l-4-3.5H4z" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 9a4.5 4.5 0 0 1 0 6"/><path d="M16.8 6.6a8 8 0 0 1 0 10.8"/></g></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></g></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5H6a2 2 0 0 0-2 2v9"/></g></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2 2 0 0 1 5 5.5h3.6l2 2.5H19a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5 20 20"/></g></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6v6c0 4-3 7-7 8.5C8 19 5 16 5 12V6z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="brand">
+    <span class="brand-mark"><svg><use href="#i-wave"/></svg></span>
+    <span class="brand-text"><b>Jarvis</b><small>локальный ассистент</small></span>
+  </div>
+  <div class="status" id="status" data-state="idle" role="status" aria-live="polite">
+    <span class="status-dot"></span>
+    <span class="status-label" id="status-label">Ожидание</span>
+    <span class="chip" id="state-chip">Готов слушать</span>
+  </div>
+  <div class="providers" id="providers"></div>
+</header>
+
+<nav class="tabs" id="tabs" role="tablist">
+  <button class="tab is-active" role="tab" data-view="chat">Главная</button>
+  <button class="tab" role="tab" data-view="skills">Навыки</button>
+  <button class="tab" role="tab" data-view="settings">Настройки</button>
+  <button class="tab" role="tab" data-view="journal">Журнал</button>
+  <button class="tab" role="tab" data-view="about">О программе</button>
+</nav>
+
+<main>
+  <!-- ------------------------------------------------------------- главная -->
+  <section class="view is-active" id="view-chat">
+    <div class="chat-scroll" id="chat-scroll">
+      <div class="feed" id="chat-feed"></div>
+    </div>
+    <form class="composer" id="composer" autocomplete="off">
+      <button type="button" class="icon-btn" id="mic" title="Слушать (Ctrl+L)" aria-label="Слушать">
+        <svg><use href="#i-mic"/></svg>
+      </button>
+      <div class="field">
+        <input type="text" id="input" placeholder="Спросите что-нибудь или нажмите микрофон"
+               aria-label="Вопрос" maxlength="600">
+        <button type="button" class="icon-btn subtle" id="stop" hidden title="Остановить" aria-label="Остановить">
+          <svg><use href="#i-stop"/></svg>
+        </button>
+      </div>
+      <button type="button" class="chip-toggle" id="speak" aria-pressed="true">
+        <svg><use href="#i-speaker"/></svg><span>Озвучивать</span>
+      </button>
+      <button type="submit" class="btn primary" id="send">
+        <svg><use href="#i-send"/></svg><span>Отправить</span>
+      </button>
+    </form>
+  </section>
+
+  <!-- -------------------------------------------------------------- навыки -->
+  <section class="view" id="view-skills">
+    <div class="view-head">
+      <div>
+        <h1>Навыки</h1>
+        <p class="muted" id="skills-total">Загружаю…</p>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="btn" id="skills-refresh"><svg><use href="#i-refresh"/></svg><span>Обновить</span></button>
+      </div>
+    </div>
+    <div class="cards" id="skills"></div>
+    <p class="note"><svg><use href="#i-shield"/></svg>
+      Опасные действия (выключение, удаление файлов, отправка сообщений) выполняются
+      только после подтверждения — оно спросится прямо в чате.</p>
+  </section>
+
+  <!-- ------------------------------------------------------------ настройки -->
+  <section class="view" id="view-settings">
+    <div class="view-head">
+      <div>
+        <h1>Настройки</h1>
+        <p class="muted">Файл настроек — <code id="settings-path">…</code>. Ключи хранятся отдельно, в <code>.env</code>.</p>
+      </div>
+    </div>
+    <div id="settings"></div>
+    <div class="savebar">
+      <button type="button" class="btn primary" id="save"><svg><use href="#i-check"/></svg><span>Сохранить настройки</span></button>
+      <span class="muted" id="save-status"></span>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- журнал -->
+  <section class="view" id="view-journal">
+    <div class="view-head">
+      <div><h1>Журнал</h1><p class="muted">Секреты при копировании вырезаются автоматически.</p></div>
+      <div class="row-actions">
+        <button type="button" class="btn" id="log-refresh"><svg><use href="#i-refresh"/></svg><span>Обновить</span></button>
+        <button type="button" class="btn" id="log-copy"><svg><use href="#i-copy"/></svg><span>Скопировать для отчёта</span></button>
+      </div>
+    </div>
+    <div class="filters">
+      <div class="chips" id="log-levels" role="group" aria-label="Уровень событий">
+        <button type="button" class="chip is-active" data-level="all">Все</button>
+        <button type="button" class="chip" data-level="info">Информация</button>
+        <button type="button" class="chip" data-level="warning">Предупреждения</button>
+        <button type="button" class="chip" data-level="error">Ошибки</button>
+      </div>
+      <label class="search">
+        <svg><use href="#i-search"/></svg>
+        <input type="search" id="log-search" placeholder="Поиск по журналу" aria-label="Поиск по журналу">
+      </label>
+    </div>
+    <div class="log" id="log"></div>
+    <p class="muted" id="log-hint"></p>
+  </section>
+
+  <!-- --------------------------------------------------------- о программе -->
+  <section class="view" id="view-about">
+    <div class="view-head"><div><h1>О программе</h1><p class="muted">Jarvis — локальный ассистент с навыками-плагинами.</p></div></div>
+    <div class="cards" id="about"></div>
+  </section>
+</main>
+
+<footer class="hint">
+  <span id="hint">Enter — отправить · Ctrl+L — слушать · Esc — закрыть окно подтверждения</span>
+  <span class="muted" id="conn"></span>
+</footer>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h2 id="modal-title">Подтвердите действие</h2>
+    <p id="modal-text"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="modal-no">Отмена</button>
+      <button type="button" class="btn primary" id="modal-yes">Выполнить</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

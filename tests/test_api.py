@@ -126,6 +126,9 @@ class ApiTestCase(unittest.TestCase):
     # ---------------------------------------------------------------- чтение
     def test_status_and_skills(self):
         status = self.client.status()
+        # голос в статусе — обычное «да/нет», а не ссылка на функцию:
+        # иначе окно показывает вместо ответа строку про метод
+        self.assertIsInstance(status["voice_enabled"], bool)
         self.assertGreater(status["skills"]["total"], 5)
         skills = self.client.skills()
         dialogue = next(item for item in skills if item["id"] == "dialogue")
@@ -212,7 +215,7 @@ class ApiTestCase(unittest.TestCase):
             self.client.result("нет-такого-номера")
 
     def test_voice_without_speech_is_explained(self):
-        self.providers.voice_enabled = True
+        self.providers.voice_enabled = True  # у подставного провайдера это просто поле
         self.providers.recorder.path = None
         answer = self.client.voice()
         self.assertEqual(answer["state"], "done")

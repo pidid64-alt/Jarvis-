@@ -70,9 +70,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("autonomy", help="прогнать автономные проверки один раз")
 
-    gui = sub.add_parser("gui", help="открыть окно (Tkinter)")
-    gui.add_argument("--no-tray", action="store_true", help="без значка в трее")
-    gui.add_argument("--start-minimized", action="store_true", help="сразу свернуть в трей")
+    gui = sub.add_parser("gui", help="открыть окно Jarvis (браузер в режиме приложения)")
+    gui.add_argument("--tab", action="store_true", help="открыть обычной вкладкой, без режима приложения")
+    gui.add_argument("--browser", default="", help="какой браузер использовать (edge, chrome, chromium…)")
+    gui.add_argument("--no-daemon", action="store_true", help="не поднимать ядро, только открыть окно")
+    gui.add_argument("--voice", action="store_true", help="включить микрофон у поднятого ядра")
+    gui.add_argument("--print-url", action="store_true", help="только напечатать адрес окна")
     return parser
 
 
@@ -300,16 +303,23 @@ def cmd_autonomy(args) -> int:
 
 
 def cmd_gui(args) -> int:
-    from .gui import main as gui_main
+    """Открыть окно Jarvis (локальный интерфейс в отдельном окне браузера)."""
+    from .webapp import open_ui
 
-    argv = []
-    if getattr(args, "no_tray", False):
-        argv.append("--no-tray")
-    if getattr(args, "start_minimized", False):
-        argv.append("--start-minimized")
-    if getattr(args, "debug", False):
-        argv.append("--debug")
-    return gui_main(argv)
+    if getattr(args, "print_url", False):
+        from .client import read_target
+
+        target = read_target(verify=True)
+        if target is None:
+            print("Jarvis не запущен. Запустите: jarvis run", file=sys.stderr)
+            return 1
+        print(f"{target.url}/ui/?token={target.token}")
+        return 0
+    return open_ui(preferred=getattr(args, "browser", "") or "",
+                   debug=getattr(args, "debug", False),
+                   start=not getattr(args, "no_daemon", False),
+                   app_mode=not getattr(args, "tab", False),
+                   voice=getattr(args, "voice", False))
 
 
 COMMANDS = {

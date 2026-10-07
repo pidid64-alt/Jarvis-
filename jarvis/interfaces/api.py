@@ -93,6 +93,8 @@ class LocalApi:
         self._tasks: dict[str, Task] = {}
         self._tasks_lock = threading.RLock()
         self._client_lock = threading.RLock()
+        self._last_client = 0.0      # когда окно последний раз обращалось к ядру
+        self._demo = bool(os.environ.get("JARVIS_DEMO_UI"))
 
     # ------------------------------------------------------------------ start
     def start(self) -> dict[str, Any]:
@@ -143,6 +145,18 @@ class LocalApi:
         return self.assistant.config
 
     # ------------------------------------------------------------------- info
+    def note_client(self) -> None:
+        """Отметить, что интерфейс жив (по любому успешному запросу)."""
+        self._last_client = time.time()
+
+    def client_active(self, *, within: float = 10.0) -> bool:
+        """Открыто ли окно прямо сейчас (обращалось ли оно за последние секунды)."""
+        return bool(self._last_client) and (time.time() - self._last_client) <= within
+
+    def ui_url(self) -> str:
+        """Адрес интерфейса вместе с токеном — его открывает браузер."""
+        return f"{self.url}/ui/?token={self.token}"
+
     @property
     def url(self) -> str:
         return f"http://{self.host}:{self.port}"
@@ -572,11 +586,24 @@ def _make_handler(api: LocalApi):
         def _dispatch(self, method: str) -> None:
             parsed = urlparse(self.path)
             query = parse_qs(parsed.query)
+            if method == "GET" and (parsed.path == "/ui" or parsed.path.startswith("/ui/")):
+                self._serve_ui(parsed.path)
+                return
+            if method == "GET" and parsed.path == "/" and api._demo:
+                # демонстрационный режим (включается только JARVIS_DEMO_UI=1):
+                # корень сразу открывает интерфейс, чтобы ссылку можно было дать как есть
+                self.send_response(302)
+                self.send_header("Location", f"/ui/?token={api.token}")
+                self.send_header("Content-Length", "0")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                return
             try:
                 if parsed.path != "/health" and not self._authorized():
                     raise ApiError(401, "unauthorized",
                                    "нужен заголовок X-Jarvis-Token (токен лежит в файле рядом с настройками)")
                 payload = self._read_payload() if method == "POST" else {}
+                api.note_client()
                 with api._client_lock:  # ответы не перемешиваются между собой
                     result = api.handle(method, parsed.path, query, payload)
                 self._send(200, result)
@@ -586,5 +613,35 @@ def _make_handler(api: LocalApi):
                 log.exception("ошибка обработки запроса %s %s", method, parsed.path)
                 self._send(500, {"state": "error", "error": "internal",
                                  "message": "внутренняя ошибка, подробности в журнале"})
+
+
+        def _serve_ui(self, path: str) -> None:
+            """Отдаёт файлы интерфейса из пакета.
+
+            Это обычная статика (html, css, js, значок), секретов в ней нет,
+            поэтому токен для файлов не нужен — а вот все запросы к API его
+            требуют, так что без токена страница ничего не покажет.
+            """
+            from pathlib import Path
+
+            name = "index.html" if path in ("/ui", "/ui/") else Path(path).name
+            folder = Path(__file__).with_name("webui")
+            file = folder / name
+            types = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
+                     ".js": "application/javascript; charset=utf-8", ".svg": "image/svg+xml",
+                     ".json": "application/json; charset=utf-8", ".png": "image/png"}
+            if not file.is_file() or name.startswith(".") or file.suffix not in types \
+                    or folder.resolve() not in file.resolve().parents:
+                self._send(404, {"state": "error", "error": "not_found",
+                                 "message": "нет такого файла интерфейса"})
+                return
+            body = file.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", types[file.suffix])
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
 
     return Handler

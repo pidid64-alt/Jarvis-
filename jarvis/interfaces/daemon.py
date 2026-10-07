@@ -141,6 +141,8 @@ class Daemon:
         return False
 
     def _handle_wake(self) -> None:
+        """Пробуждение: показать окно (если закрыто) и послушать команду."""
+        self._show_window_if_needed()
         if not self.voice:
             return
         try:
@@ -150,6 +152,23 @@ class Daemon:
         except Exception as exc:  # noqa: BLE001 - демон продолжает жить
             log.exception("неожиданная ошибка в голосовом цикле")
             self.assistant.journal.error("daemon", f"внутренняя ошибка: {exc!r}")
+
+    def _show_window_if_needed(self) -> None:
+        """Горячая клавиша должна приводить к видимому окну.
+
+        Если интерфейс не обращался к ядру последние секунды, значит окно
+        закрыто — открываем. Если открыто, ничего не делаем: страница и так
+        покажет состояние «Слушаю».
+        """
+        if self._api is None or self._api.client_active():
+            return
+        try:
+            from .webapp import open_window
+
+            open_window(self._api.ui_url())
+            self.assistant.journal.info("daemon", "окно Jarvis открыто по горячей клавише")
+        except Exception:  # noqa: BLE001 - окно не критично для работы
+            log.debug("не удалось открыть окно", exc_info=True)
 
     def _voice_confirm(self, question: str) -> bool:
         """Голосовое подтверждение опасного действия: сомнение — отказ."""
