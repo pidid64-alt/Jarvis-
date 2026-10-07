@@ -327,6 +327,24 @@ def cmd_llm(args) -> int:
 
     text = (args.text or "привет").strip()
     skills = assistant.registry.enabled(include_hidden=False)
+
+    # Сначала проверяем то же, что и ассистент при работе: совпала ли фраза с
+    # навыком. Если да — модель вообще не спрашивают, и объяснять тут нечего.
+    from ..platform import platform_name as _platform_name
+
+    local = assistant.router.route(text, platform=_platform_name(), allow_llm=False)
+    if local.handled_by in {"exact", "fuzzy"} and local.intents:
+        intent = local.intents[0]
+        print()
+        print("Навык")
+        print(f"  фраза «{text}» разобрана локально: {intent.full_id} "
+              f"({intent.action.description or intent.action.id})")
+        print("  модели этот запрос НЕ отправляется: навык справляется сам.")
+        print("  Чтобы посмотреть запрос к модели, возьмите фразу, которой нет у навыков, "
+              "например:")
+        print('    python -m jarvis llm --text "напиши стих про кота"')
+        assistant.shutdown()
+        return 0
     messages = build_messages(
         skills, text,
         history_tail=[], pending=None,
@@ -381,8 +399,46 @@ def cmd_llm(args) -> int:
     elapsed = _time.monotonic() - started
     print(f"Ответ за {elapsed:.1f} с:")
     print(answer)
+    _explain_llm_answer(assistant, answer)
     assistant.shutdown()
     return 0
+
+
+def _explain_llm_answer(assistant, answer: str) -> None:
+    """Разбирает ответ модели теми же правилами, что и ядро, и говорит, что будет.
+
+    Ответ глазами человека — это просто JSON; здесь он превращается в понятную
+    строку: «ответит словами», «выполнит действие», «уточнит», «поищет». Заодно
+    видно, когда модель выдумала действие: такие пункты ядро отбросит, и об этом
+    честно сообщается.
+    """
+    from ..core.planner import parse_actions
+
+    print()
+    print("Что сделает Jarvis по этому ответу:")
+    try:
+        planned = parse_actions(answer, assistant.registry.flat_action_ids())
+    except JarvisError as exc:
+        print(f"  разобрать не удалось: {exc} — будет ответ «не понял»")
+        return
+    if not planned:
+        print("  ничего: ответ пуст или действия недопустимы (будет «не понял»)")
+        return
+    for item in planned:
+        if item.kind == "speak":
+            print(f"  ответит словами: «{item.text}»")
+        elif item.kind == "ask":
+            print(f"  спросит уточнение: «{item.text}»")
+        elif item.kind == "search":
+            print(f"  поищет в интернете: «{item.query}»"
+                  + (" и откроет браузер" if item.open_browser else ""))
+        elif item.kind == "run":
+            found = assistant.registry.find_action(item.action_id or "")
+            title = found[1].description if found else ""
+            note = " (с подтверждением)" if item.confirmation else ""
+            print(f"  выполнит действие {item.action_id}: {title}{note}")
+    print("  Записанные команды модель не выбирает: она называет только id, "
+          "остальное решает ядро.")
 
 
 def cmd_gui(args) -> int:

@@ -13,11 +13,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_cli(home: Path, *args: str, input_text: str | None = None, timeout: int = 120):
+def run_cli(home: Path, *args: str, input_text: str | None = None, timeout: int = 120,
+            extra_env: dict[str, str] | None = None):
     env = dict(os.environ)
     env["JARVIS_HOME"] = str(home)
     env["PYTHONPATH"] = str(PROJECT_ROOT)
     env.pop("JARVIS_LLM_KEY", None)
+    env.update(extra_env or {})
     return subprocess.run(
         [sys.executable, "-m", "jarvis", *args],
         capture_output=True, text=True, env=env, cwd=str(PROJECT_ROOT),
@@ -36,7 +38,8 @@ class LlmCommandTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def test_shows_request_without_sending_it(self):
-        result = run_cli(self.home, "llm")
+        # берём фразу, которой нет среди навыков: иначе модель не спрашивают вовсе
+        result = run_cli(self.home, "llm", "--text", "напиши стих про кота")
         self.assertEqual(result.returncode, 0, result.stderr)
         for expected in ("Модель", "Запрос", "chat/completions", "messages",
                          "навыков", "Запрос не отправлен"):
@@ -52,7 +55,8 @@ class LlmCommandTests(unittest.TestCase):
         env["JARVIS_HOME"] = str(env_home)
         env["PYTHONPATH"] = str(PROJECT_ROOT)
         env["JARVIS_LLM_KEY"] = "sk-очень-секретный-ключ"
-        result = subprocess.run([sys.executable, "-m", "jarvis", "llm"],
+        result = subprocess.run([sys.executable, "-m", "jarvis", "llm",
+                                 "--text", "напиши стих про кота"],
                                 capture_output=True, text=True, env=env,
                                 cwd=str(PROJECT_ROOT), timeout=120)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -62,6 +66,57 @@ class LlmCommandTests(unittest.TestCase):
     def test_help_lists_the_command(self):
         result = run_cli(self.home, "--help")
         self.assertIn("llm", result.stdout)
+
+    def test_phrase_known_by_a_skill_never_goes_to_the_model(self):
+        """Если фраза разобрана навыком, модели её не отправляют — так и говорим."""
+        result = run_cli(self.home, "llm", "--text", "привет")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("разобрана локально", result.stdout)
+        self.assertIn("dialogue.hello", result.stdout)
+        self.assertIn("НЕ отправляется", result.stdout)
+        self.assertNotIn("Тело запроса", result.stdout)
+
+    def test_send_explains_the_answer_in_plain_words(self):
+        """Ответ модели показывается и разбирается: что Jarvis по нему сделает."""
+        import json as _json
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        answer = _json.dumps({"actions": [
+            {"action": "run", "id": "volume.up"},
+            {"action": "speak", "text": "Прибавил громкость."},
+        ]}, ensure_ascii=False)
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802 - так требует http.server
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                body = _json.dumps({"choices": [{"message": {"content": answer}}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+        (self.home / "config" / "config.toml").write_text(
+            '[llm]\nenabled = true\nbase_url = "http://127.0.0.1:%d/v1"\n'
+            'api_key = "${JARVIS_LLM_KEY}"\nmodel = "test"\ntimeout_seconds = 30\n'
+            'max_retries = 0\n' % port, encoding="utf-8")
+
+        result = run_cli(self.home, "llm", "--send", "--text", "напиши стих про кота",
+                         extra_env={"JARVIS_LLM_KEY": "sk-test-for-check"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("sk-test-for-check", result.stdout + result.stderr)
+        self.assertIn("Что сделает Jarvis", result.stdout)
+        self.assertIn("выполнит действие volume.up", result.stdout)
+        self.assertIn("ответит словами: «Прибавил громкость.»", result.stdout)
+        self.assertIn("Записанные команды модель не выбирает", result.stdout)
 
 
 class CliTests(unittest.TestCase):
