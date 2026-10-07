@@ -474,6 +474,8 @@ select:focus, input:focus { border-color: var(--accent); outline: 2px solid colo
   box-shadow: var(--shadow);
   padding: var(--space-xl);
 }
+.modal-request { margin-top: var(--space-s); font-size: var(--font-caption); }
+
 .modal-actions { display: flex; justify-content: flex-end; gap: var(--space-s); margin-top: var(--space-l); }
 
 .toasts { position: fixed; right: var(--space-l); bottom: var(--space-l); display: flex; flex-direction: column; gap: var(--space-s); z-index: 30; }

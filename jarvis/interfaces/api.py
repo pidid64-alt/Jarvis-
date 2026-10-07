@@ -339,11 +339,13 @@ class LocalApi:
             raise ApiError(404, "unknown_task", "такой запрос не найден (возможно, окно перезапускалось)")
         if task.done.is_set():
             return {"state": "done", "reply": task.reply, "pending_id": task.id,
-                    "error": task.error or None}
+                    "request": task.text, "error": task.error or None}
         if task.asked:
+            # окно спрашивает: показываем и вопрос навыка, и фразу пользователя,
+            # чтобы было видно, о чём именно спрашивают
             return {"state": "confirmation_required", "pending_id": task.id,
-                    "question": task.question, "reply": None}
-        return {"state": "working", "pending_id": task.id, "reply": None}
+                    "question": task.question, "request": task.text, "reply": None}
+        return {"state": "working", "pending_id": task.id, "request": task.text, "reply": None}
 
     def _confirm(self, payload: dict[str, Any]) -> dict[str, Any]:
         task_id = str(payload.get("pending_id", "")).strip()

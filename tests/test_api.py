@@ -135,6 +135,14 @@ class ApiTestCase(unittest.TestCase):
         self.assertTrue(dialogue["actions"])
         self.assertIn("permissions", dialogue)
 
+    def test_confirmation_carries_question_and_request(self):
+        """Окно подтверждения получает и вопрос навыка, и фразу пользователя."""
+        answer = self.client.ask("перезагрузи компьютер", speak=False)
+        self.assertEqual(answer["state"], "confirmation_required")
+        self.assertTrue(answer["question"].strip(), "вопрос подтверждения пустой")
+        self.assertEqual(answer["request"], "перезагрузи компьютер")
+        self.client.confirm(answer["pending_id"], approved=False)
+
     def test_skill_toggle_persists_in_config(self):
         answer = self.client.toggle_skill("volume", False)
         self.assertFalse(answer["skill"]["enabled"])

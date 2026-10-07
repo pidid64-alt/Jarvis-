@@ -53,7 +53,8 @@ const LABELS = {
   "journal.copied": "Сведения для отчёта скопированы (секреты скрыты)",
   "journal.copy_failed": "Не удалось получить сведения: {reason}",
   "journal.empty": "Записей нет",
-  "confirm.default": "Выполнить действие?",
+  "confirm.default": "Выполнить действие? Разрешите, если это то, что вы просили.",
+  "confirm.request": "Запрос: «{text}»",
   "error.core": "Ядро не ответило: {reason}",
   "about.copied": "Сведения о программе скопированы",
 };
@@ -68,6 +69,12 @@ function t(key, values) {
 }
 
 // ------------------------------------------------------- чистые функции
+
+/** Текст окна подтверждения: пустой вопрос заменяем понятным пояснением. */
+function confirmationText(question) {
+  const text = String(question == null ? "" : question).trim();
+  return text || LABELS["confirm.default"];
+}
 
 /** Имя ключа из ссылки: `${JARVIS_LLM_KEY}` -> `JARVIS_LLM_KEY`. */
 function secretName(reference, fallback) {
@@ -131,7 +138,7 @@ function changedSettings(values, original) {
   return changes;
 }
 
-const PURE = { LABELS, t, secretName, themeName, levelOf, bubbleClass, providerChips, journalRows, changedSettings };
+const PURE = { LABELS, t, confirmationText, secretName, themeName, levelOf, bubbleClass, providerChips, journalRows, changedSettings };
 
 // ------------------------------------------------------------------ страница
 
@@ -267,9 +274,13 @@ if (typeof document !== "undefined") {
   }
 
   function askConfirmation(answer) {
-    state.pendingId = answer.pending_id;
+    const pendingId = answer.pending_id || state.pendingId;
+    // не открываем второе окно для того же запроса: иначе вопрос возвращается
+    // сам собой и кажется, что окно «залипло»
+    if (!el("modal").hidden && pendingId && pendingId === state.pendingId) return;
+    state.pendingId = pendingId;
     setState("waiting_confirmation");
-    openModal(answer.question || t("confirm.default"), async (approved) => {
+    openModal(answer.question, answer.request, async (approved) => {
       setState("thinking");
       try {
         const result = await Api.post("/confirm", { pending_id: state.pendingId, approved });
@@ -762,8 +773,11 @@ if (typeof document !== "undefined") {
 
   let modalResolver = null;
 
-  function openModal(question, onAnswer) {
-    el("modal-text").textContent = question;
+  function openModal(question, request, onAnswer) {
+    el("modal-text").textContent = confirmationText(question);
+    const line = el("modal-request");
+    line.textContent = request ? t("confirm.request", { text: request }) : "";
+    line.hidden = !request;
     el("modal").hidden = false;
     modalResolver = onAnswer;
     el("modal-yes").focus();

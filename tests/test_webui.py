@@ -245,6 +245,9 @@ class PageLogicTests(unittest.TestCase):
             "out.push(JSON.stringify(P.changedSettings(values, original)));"
             "out.push(P.t('skills.total', {total: 5, enabled: 4}));"
             "out.push(P.secretName('${MY_KEY}', 'JARVIS_LLM_KEY'));"
+            "out.push(P.confirmationText(''));"
+            "out.push(P.confirmationText('   '));"
+            "out.push(P.confirmationText('Выключить компьютер? Подтверждаете?'));"
             "out.push(P.secretName('просто текст', 'JARVIS_LLM_KEY'));"
             "console.log(out.join('|'));"
         )
@@ -260,7 +263,11 @@ class PageLogicTests(unittest.TestCase):
         self.assertEqual(answer[12], '[["b","x"]]')
         self.assertEqual(answer[13], "Навыков: 5 (включено 4)")
         self.assertEqual(answer[14], "MY_KEY")
-        self.assertEqual(answer[15], "JARVIS_LLM_KEY")
+        # окно подтверждения никогда не бывает пустым
+        self.assertIn("Разрешите", answer[15])
+        self.assertIn("Разрешите", answer[16])
+        self.assertEqual(answer[17], "Выключить компьютер? Подтверждаете?")
+        self.assertEqual(answer[18], "JARVIS_LLM_KEY")
 
 
 class PageRunTests(unittest.TestCase):

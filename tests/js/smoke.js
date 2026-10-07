@@ -232,6 +232,8 @@ async function main() {
   check("окно подтверждения появилось", modal && modal.hidden === false, `hidden=${modal && modal.hidden}`);
   if (modal && modal.hidden === false) {
     check("вопрос показан", textOf("modal-text").length > 0, textOf("modal-text"));
+    check("видно, о чём спрашивают", textOf("modal-request").includes("перезагрузи"),
+          textOf("modal-request"));
     const no = document.getElementById("modal-no");
     no.click();
     await tick(800);
