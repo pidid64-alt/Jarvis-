@@ -57,6 +57,10 @@ const LABELS = {
   "confirm.request": "Запрос: «{text}»",
   "error.core": "Ядро не ответило: {reason}",
   "about.copied": "Сведения о программе скопированы",
+  "about.stop": "Остановить Jarvis",
+  "about.stop_hint": "Ядро выключится, окно перестанет отвечать. Запустить снова: jarvis gui",
+  "about.stop_question": "Остановить Jarvis? Ассистент выключится, окно перестанет отвечать.",
+  "about.stop_failed": "Ядро не подтвердило остановку: {reason}",
 };
 
 /** Тексты с подстановками: `t("skills.total", {total: 3})`. */
@@ -746,8 +750,9 @@ if (typeof document !== "undefined") {
     licenses.className = "section";
     licenses.innerHTML = `<div class="section-title">Использованные проекты и лицензии</div>
       <p class="muted">Piper (MIT) — синтез речи · whisper.cpp (MIT) — распознавание ·
-      openWakeWord (Apache-2.0) — слово-активатор · pystray (LGPL-3.0) — значок в трее ·
-      шрифты: Segoe UI (Windows), Noto Sans и DejaVu Sans (SIL OFL / свободная лицензия).
+      openWakeWord (Apache-2.0) — слово-активатор. Окно показывает браузер, который уже
+      стоит в системе; страница Jarvis написана здесь и сторонних библиотек не использует.
+      Шрифты: Segoe UI (Windows), Noto Sans и DejaVu Sans (SIL OFL / свободная лицензия).
       Значки интерфейса нарисованы в этом проекте.</p>`;
     card.appendChild(licenses);
 
@@ -764,8 +769,38 @@ if (typeof document !== "undefined") {
         `Данные: ${(info.status || {}).state_dir}\nНавыков: ${((info.status || {}).skills || {}).total}`);
       toast(t("about.copied"));
     });
-    actions.appendChild(copy);
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "btn danger";
+    stop.id = "stop-jarvis";
+    stop.textContent = t("about.stop");
+    stop.addEventListener("click", () => {
+      openModal(t("about.stop_question"), "", async (approved) => {
+        if (!approved) return;
+        try {
+          const answer = await Api.post("/shutdown", {});
+          if (answer && answer.stopping === false) {
+            toast(t("about.stop_failed", { reason: "нет обработчика остановки" }), "error");
+            return;
+          }
+          toast(t("about.stop"));
+          el("conn").textContent = "ядро остановлено";
+          document.body.dataset.connected = "false";
+        } catch (error) {
+          // ядро могло закрыть соединение, уже выключаясь — это не ошибка
+          toast(t("about.stop"));
+          document.body.dataset.connected = "false";
+        }
+      });
+    });
+    actions.append(copy, stop);
     card.appendChild(actions);
+
+    const hint = document.createElement("p");
+    hint.className = "muted";
+    hint.style.padding = "0 var(--space-l) var(--space-l)";
+    hint.textContent = t("about.stop_hint");
+    card.appendChild(hint);
     box.appendChild(card);
   }
 

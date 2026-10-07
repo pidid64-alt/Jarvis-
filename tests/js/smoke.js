@@ -206,6 +206,10 @@ async function main() {
   await tick(400);
   check("раздел «О программе» заполнен", textOf("about").includes("Jarvis") || textOf("about").length > 40,
         textOf("about").slice(0, 60));
+  const stopButton = document.getElementById("stop-jarvis");
+  check("кнопка остановки на месте", Boolean(stopButton) && stopButton.textContent.includes("Остановить"),
+        stopButton ? stopButton.textContent : "нет");
+  check("в лицензиях нет трея", !textOf("about").includes("pystray"), textOf("about").slice(0, 40));
 
   // --- чат: отправка команды ----------------------------------------------
   const chatTab = tabs.find((tab) => tab.dataset.view === "chat");
@@ -240,6 +244,24 @@ async function main() {
     check("отказ закрывает окно", modal.hidden === true);
   }
   check("чат не потерял сообщения", textOf("chat-feed").length >= before);
+
+  // --- остановка ассистента из окна (последняя проверка: ядро выключится) ---
+  aboutTab.click();
+  await tick(300);
+  const stop = document.getElementById("stop-jarvis");
+  if (stop) {
+    stop.click();
+    await tick(300);
+    const modal2 = document.getElementById("modal");
+    check("остановка спрашивает подтверждение", modal2 && modal2.hidden === false
+      && textOf("modal-text").includes("Остановить"), textOf("modal-text").slice(0, 60));
+    document.getElementById("modal-yes").click();
+    await tick(1200);
+    check("ядро остановлено по кнопке", document.body.dataset.connected === "false",
+          `connected=${document.body.dataset.connected}`);
+  } else {
+    report.warnings.push("кнопка остановки не найдена");
+  }
 
   report.calls = elements.fetchCalls.length;
   console.log(JSON.stringify(report));

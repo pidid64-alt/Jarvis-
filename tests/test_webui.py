@@ -287,7 +287,9 @@ class PageRunTests(unittest.TestCase):
         self.home = isolated_home()
         self.home.__enter__()
         self.assistant = make_assistant()
-        self.api = LocalApi(self.assistant, host="127.0.0.1", port=0)
+        self.stopped: list[str] = []
+        self.api = LocalApi(self.assistant, host="127.0.0.1", port=0,
+                            on_shutdown=lambda: self.stopped.append("stop"))
         self.api.start()
         self.addCleanup(self._stop)
 
@@ -310,6 +312,8 @@ class PageRunTests(unittest.TestCase):
         self.assertEqual(failed, [], f"не прошли проверки: {failed}")
         self.assertGreaterEqual(len(report["checks"]), 20, "проверок подозрительно мало")
         self.assertGreater(report.get("calls", 0), 10, "страница почти не обращалась к ядру")
+        # кнопка «Остановить Jarvis» действительно дошла до ядра
+        self.assertEqual(self.stopped, ["stop"], "ядро не получило команду остановки из окна")
 
 
 if __name__ == "__main__":

@@ -258,6 +258,8 @@ main { flex: 1; min-height: 0; display: flex; }
 .btn[disabled] { color: var(--muted); cursor: default; opacity: .7; }
 .btn.primary { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
+.btn.danger { border-color: var(--err); color: var(--err); }
+.btn.danger:hover { background: color-mix(in srgb, var(--err) 14%, transparent); }
 
 .icon-btn {
   display: inline-grid; place-items: center;
