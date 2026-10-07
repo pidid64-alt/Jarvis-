@@ -35,37 +35,14 @@ EVENT_POLL_MS = 400
 HISTORY_POLL_MS = 5000
 TASK_POLL_MS = 250
 
-STATE_COLORS = {
-    "idle": "#7d8590",
-    "listening": "#3fb950",
-    "thinking": "#d29922",
-    "speaking": "#2f81f7",
-    "waiting_confirmation": "#db6d28",
-    "error": "#f85149",
-}
+#: Стиль окна живёт в одном файле — ``jarvis.interfaces.theme``. Здесь остаются
+#: только короткие имена, чтобы окно и инструменты документации читались просто.
+from . import theme as theme_module  # noqa: E402  (нужен ниже по файлу)
 
-PALETTES = {
-    "dark": {
-        "bg": "#101418",
-        "panel": "#161b22",
-        "text": "#e6edf3",
-        "muted": "#8b949e",
-        "accent": "#2f81f7",
-        "entry": "#0d1117",
-        "user": "#7ee787",
-        "jarvis": "#79c0ff",
-    },
-    "light": {
-        "bg": "#f6f8fa",
-        "panel": "#ffffff",
-        "text": "#1f2328",
-        "muted": "#59636e",
-        "accent": "#0969da",
-        "entry": "#ffffff",
-        "user": "#1a7f37",
-        "jarvis": "#0a3069",
-    },
-}
+PALETTES = theme_module.PALETTES
+STATE_COLORS = theme_module.STATE_COLORS["dark"]
+SPACE = theme_module.SPACE
+RADIUS = theme_module.RADIUS
 
 
 # --------------------------------------------------------------- мелкие helpers
@@ -85,12 +62,33 @@ def tkinter_available() -> tuple[bool, str]:
 
 
 def theme_palette(name: str) -> dict[str, str]:
-    """Палитра окна: тёмная (по умолчанию) или светлая."""
-    return PALETTES.get((name or "dark").lower(), PALETTES["dark"])
+    """Палитра окна: ``dark``, ``light`` или ``system`` (неизвестное — тёмная)."""
+    return theme_module.palette(name)
 
 
-def state_color(state: str) -> str:
-    return STATE_COLORS.get(state or "idle", STATE_COLORS["idle"])
+def state_color(state: str, theme: str = theme_module.DEFAULT_THEME) -> str:
+    """Цвет состояния окна; набор цветов разный в тёмной и светлой теме."""
+    return theme_module.state_color(state, theme)
+
+
+def theme_label(t: Callable[..., str], value: Any) -> str:
+    """Название темы для человека: ``system`` → «как в системе»."""
+    key = str(value or "").strip().lower()
+    if key in ("system", "dark", "light"):
+        return t(f"gui.theme.{key}")
+    for name in ("system", "dark", "light"):  # пришла уже подпись — оставим её
+        if str(value) == t(f"gui.theme.{name}"):
+            return str(value)
+    return t("gui.theme.system")
+
+
+def theme_value(t: Callable[..., str], label: Any) -> str:
+    """Обратно: подпись из списка → значение настройки (``system``, ``dark``, ``light``)."""
+    text = str(label or "").strip()
+    for name in ("system", "dark", "light"):
+        if text.lower() == name or text == t(f"gui.theme.{name}"):
+            return name
+    return theme_module.SYSTEM_THEME
 
 
 def trim(text: str, limit: int = 120) -> str:
@@ -230,18 +228,20 @@ class GuiApp:
         self.root.title("Jarvis")
         self.root.geometry("880x640")
         self.root.minsize(700, 520)
+        theme_module.tk_scaling(self.root)   # 125 % и 150 % в Windows — без мыла
 
         self._status = self._call(lambda: self.client.status(), default={}) or {}
         self._config = self._call(lambda: self.client.config(), default={}) or {}
-        self.theme = str((self._config.get("config") or {}).get("assistant", {}).get("theme", "dark"))
-        self.palette = theme_palette(self.theme)
+        # в настройках может стоять «system»: тогда тему берём у системы
+        self.theme = str((self._config.get("config") or {}).get("assistant", {})
+                         .get("theme", theme_module.SYSTEM_THEME))
+        self.theme_name = theme_module.resolve(self.theme)
+        self.palette = theme_module.PALETTES[self.theme_name]
         self.t = translator or self._translator()
+        self.fonts = self._resolve_fonts()
+        self._themed: list[tuple[Any, dict[str, str]]] = []
 
         self.style = ttk.Style(self.root)
-        try:
-            self.style.theme_use("clam")
-        except tk.TclError:
-            pass
         self._apply_style()
 
         self._build_header()
@@ -323,24 +323,56 @@ class GuiApp:
         if not self._closing:
             self.root.after(100, self._drain)
 
+    def _resolve_fonts(self) -> dict[str, str]:
+        """Подобрать шрифты из установленных: Segoe UI (Windows), Noto/DejaVu (Linux)."""
+        try:
+            from tkinter import font as tkfont
+
+            return theme_module.resolve_families(tkfont.families(self.root))
+        except Exception:  # noqa: BLE001 - в урезанной сборке нет списка шрифтов
+            return theme_module.resolve_families(None)
+
+    def font(self, kind: str) -> tuple:
+        """Шрифт из шкалы темы: ``self.font("heading")``."""
+        return theme_module.font_spec(kind, self.fonts)
+
+    def _colors(self, widget: Any, **mapping: str) -> Any:
+        """Виджет и его цвета из палитры — чтобы смена темы шла на лету."""
+        self._themed.append((widget, mapping))
+        try:
+            widget.configure(**{option: self.palette[key] for option, key in mapping.items()})
+        except Exception:  # noqa: BLE001 - не все опции есть у всех виджетов
+            log.debug("не удалось задать цвета виджета", exc_info=True)
+        return widget
+
     def _apply_style(self) -> None:
-        palette = self.palette
-        self.root.configure(bg=palette["bg"])
-        self.style.configure("TFrame", background=palette["bg"])
-        self.style.configure("TNotebook", background=palette["bg"], borderwidth=0)
-        self.style.configure("TNotebook.Tab", padding=(14, 7), background=palette["panel"],
-                             foreground=palette["text"])
-        self.style.map("TNotebook.Tab",
-                       background=[("selected", palette["accent"])],
-                       foreground=[("selected", "#ffffff")])
-        self.style.configure("TLabel", background=palette["bg"], foreground=palette["text"])
-        self.style.configure("Muted.TLabel", background=palette["bg"], foreground=palette["muted"])
-        self.style.configure("TButton", padding=(10, 5))
-        self.style.configure("TCheckbutton", background=palette["bg"], foreground=palette["text"])
-        self.style.configure("Treeview", background=palette["panel"], fieldbackground=palette["panel"],
-                             foreground=palette["text"], rowheight=24)
-        self.style.configure("Treeview.Heading", background=palette["bg"], foreground=palette["text"])
-        self.style.configure("TEntry", fieldbackground=palette["entry"], foreground=palette["text"])
+        """Единственное место, где окно настраивает ttk. Цвета — только из темы."""
+        self.root.configure(bg=self.palette["bg"])
+        theme_module.apply_ttk(self.style, self.palette, self.theme_name)
+        self._retint()
+
+    def _retint(self) -> None:
+        """Перекрасить обычные (не ttk) виджеты после смены темы."""
+        for widget, mapping in self._themed:
+            try:
+                widget.configure(**{option: self.palette[key] for option, key in mapping.items()})
+            except Exception:  # noqa: BLE001
+                log.debug("виджет не перекрасился", exc_info=True)
+        for tag, color_key in getattr(self, "_chat_tags", {}).items():
+            try:
+                self.chat.tag_configure(tag, foreground=self.palette[color_key])
+            except Exception:  # noqa: BLE001
+                log.debug("не удалось перекрасить метку чата", exc_info=True)
+
+    def set_theme(self, name: str) -> None:
+        """Сменить тему: ``system``, ``dark`` или ``light``."""
+        self.theme = str(name or theme_module.SYSTEM_THEME)
+        resolved = theme_module.resolve(self.theme)
+        if resolved != self.theme_name:
+            self.theme_name = resolved
+            self.palette = theme_module.PALETTES[resolved]
+        self._apply_style()
+        log.info("тема окна: %s (показана %s)", self.theme, resolved)
 
     # -------------------------------------------------------------------- вёрстка
     def _build_header(self) -> None:
@@ -348,28 +380,31 @@ class GuiApp:
         from tkinter import ttk
 
         palette = self.palette
-        header = tk.Frame(self.root, bg=palette["panel"], height=52)
-        header.pack(side="top", fill="x")
-        header.pack_propagate(False)
+        self._header = self._colors(tk.Frame(self.root, height=56), bg="panel")
+        self._header.pack(side="top", fill="x")
+        self._header.pack_propagate(False)
 
-        self.state_canvas = tk.Canvas(header, width=22, height=22, bg=palette["panel"],
-                                      highlightthickness=0)
-        self.state_canvas.pack(side="left", padx=(14, 8), pady=14)
-        self.state_dot = self.state_canvas.create_oval(3, 3, 19, 19, fill=STATE_COLORS["idle"], outline="")
+        self.state_canvas = self._colors(tk.Canvas(self._header, width=22, height=22,
+                                                   highlightthickness=0), bg="panel")
+        self.state_canvas.pack(side="left", padx=(SPACE["l"], SPACE["s"]),
+                               pady=SPACE["l"] + SPACE["xs"])
+        self.state_dot = self.state_canvas.create_oval(3, 3, 19, 19,
+                                                       fill=state_color("idle", self.theme_name), outline="")
 
-        self.state_label = tk.Label(header, text=self.t("gui.state.idle"), bg=palette["panel"],
-                                    fg=palette["text"], font=("TkDefaultFont", 11, "bold"))
+        self.state_label = self._colors(tk.Label(self._header, text=self.t("gui.state.idle"),
+                                                 font=self.font("heading")), bg="panel", fg="text")
         self.state_label.pack(side="left")
 
-        self.provider_label = ttk.Label(header, text=provider_summary(self._status, self.t),
+        self.provider_label = ttk.Label(self._header, text=provider_summary(self._status, self.t),
                                         style="Muted.TLabel")
-        self.provider_label.pack(side="right", padx=14)
+        self.provider_label.pack(side="right", padx=SPACE["l"])
 
     def _build_tabs(self) -> None:
         from tkinter import ttk
 
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(side="top", fill="both", expand=True, padx=10, pady=(8, 0))
+        self.notebook.pack(side="top", fill="both", expand=True,
+                           padx=SPACE["m"], pady=(SPACE["s"], 0))
         self.tab_chat = ttk.Frame(self.notebook)
         self.tab_skills = ttk.Frame(self.notebook)
         self.tab_settings = ttk.Frame(self.notebook)
@@ -393,36 +428,38 @@ class GuiApp:
 
         palette = self.palette
         frame = self.tab_chat
-        chat_frame = tk.Frame(frame, bg=palette["bg"])
-        chat_frame.pack(side="top", fill="both", expand=True, padx=6, pady=6)
+        chat_frame = self._colors(tk.Frame(frame), bg="bg")
+        chat_frame.pack(side="top", fill="both", expand=True, padx=SPACE["s"], pady=SPACE["s"])
 
-        self.chat = tk.Text(chat_frame, wrap="word", state="disabled", height=18,
-                            bg=palette["entry"], fg=palette["text"], relief="flat",
-                            padx=10, pady=8, font=("TkDefaultFont", 11))
+        self.chat = self._colors(tk.Text(chat_frame, wrap="word", state="disabled", height=18,
+                                         relief="flat", padx=SPACE["m"], pady=SPACE["s"],
+                                         font=self.font("body")), bg="entry", fg="text")
         scrollbar = ttk.Scrollbar(chat_frame, orient="vertical", command=self.chat.yview)
         self.chat.configure(yscrollcommand=scrollbar.set)
         self.chat.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        self.chat.tag_configure("user", foreground=palette["user"])
-        self.chat.tag_configure("jarvis", foreground=palette["jarvis"])
-        self.chat.tag_configure("system", foreground=palette["muted"])
+        #: какие метки чата каким цветом красить — пригодится при смене темы
+        self._chat_tags = {"user": "user", "jarvis": "jarvis", "system": "muted"}
+        self._retint()
 
-        bottom = tk.Frame(frame, bg=palette["bg"])
-        bottom.pack(side="bottom", fill="x", padx=6, pady=(0, 8))
+        bottom = self._colors(tk.Frame(frame), bg="bg")
+        bottom.pack(side="bottom", fill="x", padx=SPACE["s"], pady=(0, SPACE["s"]))
 
         self.mic_button = ttk.Button(bottom, text=self.t("gui.chat.listen"), command=self._listen)
         self.mic_button.pack(side="left")
 
-        self.entry = ttk.Entry(bottom, font=("TkDefaultFont", 11))
-        self.entry.pack(side="left", fill="x", expand=True, padx=8)
+        self.entry = ttk.Entry(bottom, font=self.font("body"))
+        self.entry.pack(side="left", fill="x", expand=True, padx=SPACE["s"])
         self.entry.bind("<Return>", lambda *_: self._send())
 
-        self.send_button = ttk.Button(bottom, text=self.t("gui.chat.send"), command=self._send)
+        self.send_button = ttk.Button(bottom, text=self.t("gui.chat.send"),
+                                      command=self._send, style="Accent.TButton")
         self.send_button.pack(side="right")
 
         self.speak_var = tk.BooleanVar(value=bool(self._config.get("config", {})
                                                   .get("voice", {}).get("enabled", True)))
-        ttk.Checkbutton(bottom, text=self.t("gui.chat.speak"), variable=self.speak_var).pack(side="right", padx=8)
+        ttk.Checkbutton(bottom, text=self.t("gui.chat.speak"),
+                        variable=self.speak_var).pack(side="right", padx=SPACE["s"])
 
     def _build_skills_tab(self) -> None:
         import tkinter as tk
@@ -431,8 +468,8 @@ class GuiApp:
         palette = self.palette
         frame = self.tab_skills
 
-        top = tk.Frame(frame, bg=palette["bg"])
-        top.pack(side="top", fill="both", expand=True, padx=6, pady=6)
+        top = self._colors(tk.Frame(frame), bg="bg")
+        top.pack(side="top", fill="both", expand=True, padx=SPACE["s"], pady=SPACE["s"])
 
         columns = ("name", "state", "rights")
         self.skills_tree = ttk.Treeview(top, columns=columns, show="headings", height=12)
@@ -449,17 +486,17 @@ class GuiApp:
         self.skills_tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
 
-        details = tk.Frame(frame, bg=palette["bg"])
-        details.pack(side="bottom", fill="x", padx=6, pady=(0, 6))
-        self.skill_details = tk.Text(details, height=7, wrap="word", state="disabled",
-                                     bg=palette["entry"], fg=palette["text"], relief="flat",
-                                     padx=10, pady=8)
+        details = self._colors(tk.Frame(frame), bg="bg")
+        details.pack(side="bottom", fill="x", padx=SPACE["s"], pady=(0, SPACE["s"]))
+        self.skill_details = self._colors(tk.Text(details, height=7, wrap="word", state="disabled",
+                                                  relief="flat", padx=SPACE["m"], pady=SPACE["s"],
+                                                  font=self.font("body")), bg="entry", fg="text")
         self.skill_details.pack(side="top", fill="x")
 
-        buttons = tk.Frame(frame, bg=palette["bg"])
-        buttons.pack(side="bottom", fill="x", padx=6, pady=6)
+        buttons = self._colors(tk.Frame(frame), bg="bg")
+        buttons.pack(side="bottom", fill="x", padx=SPACE["s"], pady=SPACE["s"])
         ttk.Button(buttons, text=self.t("gui.skills.enable"), command=lambda: self._toggle_skill(True)).pack(side="left")
-        ttk.Button(buttons, text=self.t("gui.skills.disable"), command=lambda: self._toggle_skill(False)).pack(side="left", padx=8)
+        ttk.Button(buttons, text=self.t("gui.skills.disable"), command=lambda: self._toggle_skill(False)).pack(side="left", padx=SPACE["s"])
         ttk.Button(buttons, text=self.t("gui.refresh"), command=self._refresh_skills).pack(side="left")
         self.skills_hint = ttk.Label(buttons, text="", style="Muted.TLabel")
         self.skills_hint.pack(side="right")
@@ -479,16 +516,17 @@ class GuiApp:
         body = scroller.inner
 
         def section(title: str) -> tk.Frame:
-            block = tk.Frame(body, bg=palette["bg"])
-            block.pack(side="top", fill="x", padx=10, pady=(10, 0))
-            ttk.Label(block, text=title, font=("TkDefaultFont", 11, "bold")).pack(side="top", anchor="w")
-            inner = tk.Frame(block, bg=palette["bg"])
-            inner.pack(side="top", fill="x", pady=(4, 0))
+            block = self._colors(tk.Frame(body), bg="bg")
+            block.pack(side="top", fill="x", padx=SPACE["m"], pady=(SPACE["m"], 0))
+            ttk.Label(block, text=title, style="Heading.TLabel",
+                      font=self.font("heading")).pack(side="top", anchor="w")
+            inner = self._colors(tk.Frame(block), bg="bg")
+            inner.pack(side="top", fill="x", pady=(SPACE["xs"], 0))
             return inner
 
         def field(parent, label: str, key: str, value: str, note: str = "") -> None:
-            row = tk.Frame(parent, bg=palette["bg"])
-            row.pack(side="top", fill="x", pady=2)
+            row = self._colors(tk.Frame(parent), bg="bg")
+            row.pack(side="top", fill="x", pady=SPACE["xs"] // 2)
             ttk.Label(row, text=label, width=26).pack(side="left")
             var = tk.StringVar(value=str(value))
             entry = ttk.Entry(row, textvariable=var, width=46)
@@ -497,7 +535,7 @@ class GuiApp:
             self.settings_kinds[key] = "text"
             self.settings_original[key] = str(value)
             if note:
-                ttk.Label(row, text=note, style="Muted.TLabel").pack(side="left", padx=8)
+                ttk.Label(row, text=note, style="Muted.TLabel").pack(side="left", padx=SPACE["s"])
 
         def check(parent, label: str, key: str, value: bool) -> None:
             var = tk.BooleanVar(value=bool(value))
@@ -515,15 +553,15 @@ class GuiApp:
 
         env_names = {item["name"]: item for item in (self._config.get("env") or {}).get("names", [])}
         env_entry = env_names.get("JARVIS_LLM_KEY") or {"set": False, "masked": ""}
-        key_row = tk.Frame(block, bg=palette["bg"])
-        key_row.pack(side="top", fill="x", pady=2)
+        key_row = self._colors(tk.Frame(block), bg="bg")
+        key_row.pack(side="top", fill="x", pady=SPACE["xs"] // 2)
         state = (self.t("gui.settings.key_set", masked=env_entry.get("masked") or "…")
                  if env_entry.get("set") else self.t("gui.settings.key_missing"))
         ttk.Label(key_row, text=self.t("gui.settings.key"), width=26).pack(side="left")
         ttk.Label(key_row, text=state, style="Muted.TLabel").pack(side="left")
         self.secret_var = tk.StringVar(value="")
         secret_entry = ttk.Entry(key_row, textvariable=self.secret_var, width=32, show="•")
-        secret_entry.pack(side="left", padx=8)
+        secret_entry.pack(side="left", padx=SPACE["s"])
         ttk.Button(key_row, text=self.t("gui.settings.key_save"),
                    command=self._save_secret).pack(side="left")
         ttk.Label(block, text=self.t("gui.settings.key_note"), style="Muted.TLabel").pack(side="top", anchor="w")
@@ -533,8 +571,8 @@ class GuiApp:
         wake = voice.get("wakeword") or {}
         block = section(self.t("gui.settings.voice"))
         check(block, self.t("gui.settings.voice_enabled"), "voice.enabled", voice.get("enabled", True))
-        row = tk.Frame(block, bg=palette["bg"])
-        row.pack(side="top", fill="x", pady=2)
+        row = self._colors(tk.Frame(block), bg="bg")
+        row.pack(side="top", fill="x", pady=SPACE["xs"] // 2)
         ttk.Label(row, text=self.t("gui.settings.language"), width=26).pack(side="left")
         languages = self._call(lambda: self.client.get("/languages").get("languages", ["ru"]), default=["ru"])
         self.language_var = tk.StringVar(value=str(config.get("assistant", {}).get("language", "ru")))
@@ -555,23 +593,26 @@ class GuiApp:
         # --- интерфейс
         ui = config.get("ui") or {}
         block = section(self.t("gui.settings.interface"))
-        row = tk.Frame(block, bg=palette["bg"])
-        row.pack(side="top", fill="x", pady=2)
+        row = self._colors(tk.Frame(block), bg="bg")
+        row.pack(side="top", fill="x", pady=SPACE["xs"] // 2)
         ttk.Label(row, text=self.t("gui.settings.theme"), width=26).pack(side="left")
-        self.theme_var = tk.StringVar(value=self.theme)
-        ttk.Combobox(row, textvariable=self.theme_var, values=["dark", "light"], width=10,
-                     state="readonly").pack(side="left")
+        self.theme_var = tk.StringVar(value=theme_label(self.t, self.theme))
+        ttk.Combobox(row, textvariable=self.theme_var, width=16, state="readonly",
+                     values=[theme_label(self.t, name) for name in theme_module.THEME_CHOICES]
+                     ).pack(side="left")
+        ttk.Label(row, text=self.t("gui.settings.theme_note"), style="Muted.TLabel").pack(
+            side="left", padx=SPACE["s"])
         self.settings_vars["assistant.theme"] = self.theme_var
-        self.settings_kinds["assistant.theme"] = "choice"
-        self.settings_original["assistant.theme"] = self.theme_var.get()
+        self.settings_kinds["assistant.theme"] = "theme"
+        self.settings_original["assistant.theme"] = self.theme  # сравниваем имена, не подписи
         check(block, self.t("gui.settings.close_to_tray"), "ui.close_to_tray", ui.get("close_to_tray", True))
         check(block, self.t("gui.settings.start_minimized"), "ui.start_minimized", ui.get("start_minimized", False))
 
         # --- права
         permissions = config.get("permissions") or {}
         block = section(self.t("gui.settings.permissions"))
-        row = tk.Frame(block, bg=palette["bg"])
-        row.pack(side="top", fill="x", pady=2)
+        row = self._colors(tk.Frame(block), bg="bg")
+        row.pack(side="top", fill="x", pady=SPACE["xs"] // 2)
         ttk.Label(row, text=self.t("gui.settings.mode"), width=26).pack(side="left")
         self.mode_var = tk.StringVar(value=str(permissions.get("mode", "restricted")))
         ttk.Combobox(row, textvariable=self.mode_var, values=["restricted", "normal"], width=14,
@@ -581,11 +622,12 @@ class GuiApp:
         self.settings_original["permissions.mode"] = self.mode_var.get()
         ttk.Label(block, text=self.t("gui.settings.mode_note"), style="Muted.TLabel").pack(side="top", anchor="w")
 
-        footer = tk.Frame(body, bg=palette["bg"])
-        footer.pack(side="top", fill="x", padx=10, pady=12)
-        ttk.Button(footer, text=self.t("gui.settings.save"), command=self._save_settings).pack(side="left")
+        footer = self._colors(tk.Frame(body), bg="bg")
+        footer.pack(side="top", fill="x", padx=SPACE["m"], pady=SPACE["l"])
+        ttk.Button(footer, text=self.t("gui.settings.save"),
+                   style="Accent.TButton", command=self._save_settings).pack(side="left")
         self.settings_status = ttk.Label(footer, text="", style="Muted.TLabel")
-        self.settings_status.pack(side="left", padx=10)
+        self.settings_status.pack(side="left", padx=SPACE["s"])
 
     def _build_log_tab(self) -> None:
         import tkinter as tk
@@ -593,23 +635,24 @@ class GuiApp:
 
         palette = self.palette
         frame = self.tab_log
-        top = tk.Frame(frame, bg=palette["bg"])
-        top.pack(side="top", fill="x", padx=6, pady=6)
+        top = self._colors(tk.Frame(frame), bg="bg")
+        top.pack(side="top", fill="x", padx=SPACE["s"], pady=SPACE["s"])
         ttk.Label(top, text=self.t("gui.log.level")).pack(side="left")
         self.log_level = tk.StringVar(value="all")
         ttk.Combobox(top, textvariable=self.log_level, values=["all", "info", "warning", "error"],
-                     width=10, state="readonly").pack(side="left", padx=6)
-        ttk.Label(top, text=self.t("gui.log.search")).pack(side="left", padx=(10, 4))
+                     width=10, state="readonly").pack(side="left", padx=SPACE["s"])
+        ttk.Label(top, text=self.t("gui.log.search")).pack(side="left", padx=(SPACE["m"], SPACE["xs"]))
         self.log_search = tk.StringVar(value="")
         ttk.Entry(top, textvariable=self.log_search, width=24).pack(side="left")
-        ttk.Button(top, text=self.t("gui.refresh"), command=self._refresh_journal).pack(side="left", padx=8)
+        ttk.Button(top, text=self.t("gui.refresh"), command=self._refresh_journal).pack(side="left", padx=SPACE["s"])
         ttk.Button(top, text=self.t("gui.log.copy"), command=self._copy_report).pack(side="left")
 
-        self.log_text = tk.Text(frame, wrap="word", state="disabled", bg=palette["entry"],
-                                fg=palette["text"], relief="flat", padx=10, pady=8)
-        self.log_text.pack(side="top", fill="both", expand=True, padx=6, pady=(0, 8))
+        self.log_text = self._colors(tk.Text(frame, wrap="word", state="disabled", relief="flat",
+                                             padx=SPACE["m"], pady=SPACE["s"], font=self.font("mono")),
+                                     bg="entry", fg="text")
+        self.log_text.pack(side="top", fill="both", expand=True, padx=SPACE["s"], pady=(0, SPACE["s"]))
         self.log_hint = ttk.Label(frame, text=self.t("gui.log.hint"), style="Muted.TLabel")
-        self.log_hint.pack(side="bottom", anchor="w", padx=8, pady=(0, 6))
+        self.log_hint.pack(side="bottom", anchor="w", padx=SPACE["s"], pady=(0, SPACE["s"]))
 
     def _build_about_tab(self) -> None:
         import tkinter as tk
@@ -629,28 +672,29 @@ class GuiApp:
             "• pystray, Pillow — LGPL/HPND: значок в трее\n\n"
             f"{self.t('gui.about.privacy')}"
         )
-        widget = tk.Text(self.tab_about, wrap="word", height=18, bg=palette["entry"],
-                         fg=palette["text"], relief="flat", padx=12, pady=12)
+        widget = self._colors(tk.Text(self.tab_about, wrap="word", height=18, relief="flat",
+                                      padx=SPACE["m"], pady=SPACE["m"], font=self.font("body")),
+                              bg="entry", fg="text")
         widget.insert("1.0", text)
         widget.configure(state="disabled")
-        widget.pack(side="top", fill="both", expand=True, padx=10, pady=10)
-        row = tk.Frame(self.tab_about, bg=palette["bg"])
-        row.pack(side="bottom", fill="x", padx=10, pady=(0, 10))
+        widget.pack(side="top", fill="both", expand=True, padx=SPACE["m"], pady=SPACE["m"])
+        self.about_text = widget
+        row = self._colors(tk.Frame(self.tab_about), bg="bg")
+        row.pack(side="bottom", fill="x", padx=SPACE["m"], pady=(0, SPACE["m"]))
         ttk.Button(row, text=self.t("gui.about.open_config"),
                    command=lambda: self._open_path(paths.config_dir())).pack(side="left")
         ttk.Button(row, text=self.t("gui.about.copy_info"),
-                   command=lambda: self._copy(text)).pack(side="left", padx=8)
+                   command=lambda: self._copy(text)).pack(side="left", padx=SPACE["s"])
 
     def _build_footer(self) -> None:
         import tkinter as tk
         from tkinter import ttk
 
-        palette = self.palette
-        footer = tk.Frame(self.root, bg=palette["panel"], height=30)
-        footer.pack(side="bottom", fill="x")
-        footer.pack_propagate(False)
-        self.hint_label = ttk.Label(footer, text=self.t("gui.hint"), style="Muted.TLabel")
-        self.hint_label.pack(side="left", padx=12)
+        self._footer = self._colors(tk.Frame(self.root, height=32), bg="panel")
+        self._footer.pack(side="bottom", fill="x")
+        self._footer.pack_propagate(False)
+        self.hint_label = ttk.Label(self._footer, text=self.t("gui.hint"), style="Muted.TLabel")
+        self.hint_label.pack(side="left", padx=SPACE["m"])
 
     # ------------------------------------------------------------------- чат
     def _append_chat(self, role: str, text: str) -> None:
@@ -780,7 +824,7 @@ class GuiApp:
 
     def _set_state(self, state: str, label: str | None = None) -> None:
         self._state_ts = max(self._state_ts, time.time())
-        color = state_color(state)
+        color = state_color(state, self.theme_name)
         try:
             self.state_canvas.itemconfigure(self.state_dot, fill=color)
             if label:
@@ -841,7 +885,10 @@ class GuiApp:
     def _save_settings(self) -> None:
         changes: list[tuple[str, Any]] = []
         for key, var in self.settings_vars.items():
-            value: Any = bool(var.get()) if self.settings_kinds.get(key) == "bool" else str(var.get())
+            kind = self.settings_kinds.get(key)
+            value: Any = bool(var.get()) if kind == "bool" else str(var.get())
+            if kind == "theme":
+                value = theme_value(self.t, value)  # в списке — подписи, в настройки — имена
             if value == self.settings_original.get(key):
                 continue  # пишем только изменённое, лишний раз файл не трогаем
             changes.append((key, value))
@@ -858,6 +905,8 @@ class GuiApp:
             failed = (result or {}).get("failed") or []
             for key, value in changes:
                 self.settings_original[key] = value
+                if key == "assistant.theme":
+                    self.theme_var.set(theme_label(self.t, str(value)))
             if failed:
                 self.settings_status.configure(
                     text=self.t("gui.settings.save_partial", applied=applied, failed=", ".join(failed[:3])))
@@ -898,9 +947,7 @@ class GuiApp:
         self._config = self._call(lambda: self.client.config(), default=self._config) or self._config
         theme = str((self._config.get("config") or {}).get("assistant", {}).get("theme", self.theme))
         if theme != self.theme:
-            self.theme = theme
-            self.palette = theme_palette(theme)
-            self._apply_style()
+            self.set_theme(theme)
         self._status = self._call(lambda: self.client.status(), default=self._status) or self._status
         self.provider_label.configure(text=provider_summary(self._status, self.t))
 
@@ -1164,6 +1211,7 @@ def main(argv: list[str] | None = None) -> int:
     from ..core.logging_setup import setup_logging
 
     setup_logging(debug=args.debug)
+    log.info("масштаб Windows: %s", theme_module.enable_dpi_awareness())
     client, embedded = connect_or_start(debug=args.debug)
     try:
         app = GuiApp(client, tray=not args.no_tray, start_minimized=args.start_minimized,

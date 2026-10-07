@@ -6,7 +6,7 @@
 [assistant]
 name = "Jarvis"
 language = "ru"            # ru или en; свой язык — положите xx.json в config/i18n
-theme = "dark"             # dark | light
+theme = "system"           # system | dark | light (system — как в системе)
 max_extra_words = 6        # сколько «лишних» слов допустимо вокруг точной фразы команды
 match_threshold = 0.72     # порог нечёткого совпадения (после LLM-маршрута)
 ambiguity_margin = 0.06    # минимальный отрыв от второй команды, иначе «не понял»

@@ -171,5 +171,9 @@
   "gui.tray.quit": "Выход",
   "gui.tray.hidden": "Jarvis свёрнут в трей — окно вернётся по щелчку по значку",
   "gui.tray.unavailable": "Трей недоступен: {reason}",
-  "gui.settings.unchanged": "Изменений нет"
+  "gui.settings.unchanged": "Изменений нет",
+  "gui.theme.system": "как в системе",
+  "gui.theme.dark": "тёмная",
+  "gui.theme.light": "светлая",
+  "gui.settings.theme_note": "по умолчанию — как в системе"
 }

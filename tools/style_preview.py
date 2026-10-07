@@ -31,6 +31,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from jarvis.interfaces import theme as window_theme  # noqa: E402
+
 WIDTH, HEIGHT = 1040, 700
 SIDEBAR_W = 216
 HEADER_H = 58
@@ -101,17 +103,21 @@ def translucent(bg: str, color: str, amount: float) -> str:
 
 # ------------------------------------------------------------------- токены
 
-#: единая шкала отступов: 4 / 8 / 12 / 16 / 24
-SPACE = {"xs": 4, "s": 8, "m": 12, "l": 16, "xl": 24}
-#: единая шкала размеров шрифта
-FONTS = {"title": 21, "heading": 17, "body": 15, "caption": 13, "mono": 14}
+#: шкалы берём из темы окна, чтобы макет не мог разойтись с кодом
+SPACE = dict(window_theme.SPACE)
+FONTS = {name: spec["size"] for name, spec in window_theme.FONTS.items()}
 
-BASE_DARK = {
-    "border": "#3a3a42", "chip_bg": "#2c2c33", "chip_text": "#a9a9b6",
-}
-BASE_LIGHT = {
-    "border": "#e1e1e4", "chip_bg": "#ededf0", "chip_text": "#5f5f6a",
-}
+
+def window_palette(name: str) -> dict[str, str]:
+    """Палитра принятого направления — прямо из темы окна.
+
+    Два ключа макету нужны свои: ``user_border``/``assistant_border`` — рамки
+    «пузырей» чата (в теме они берутся из акцента и границы).
+    """
+    palette = dict(window_theme.PALETTES[name])
+    palette["user_border"] = palette["accent"]
+    palette["assistant_border"] = palette["border"]
+    return palette
 
 STYLES: dict[str, dict] = {
     "before": {
@@ -154,30 +160,7 @@ STYLES: dict[str, dict] = {
         "radius": {"card": 8, "button": 6, "field": 6, "chip": 999, "bubble": 10},
         "shadow": True,
         "bubbles": {"user": "accent", "assistant": "card"},
-        "palette": {
-            "dark": {
-                "bg": "#1b1b1f", "surface": "#232329", "surface2": "#2c2c33",
-                "border": "#3a3a42", "text": "#f3f3f7", "muted": "#a9a9b6",
-                "accent": "#60cdff", "on_accent": "#10131a", "input_bg": "#2c2c33",
-                "user_text": "#10131a", "assistant_text": "#f3f3f7",
-                "user_bg": "#60cdff", "assistant_bg": "#232329",
-                "user_border": "#60cdff", "assistant_border": "#3a3a42",
-                "chip_bg": "#2c2c33", "chip_text": "#a9a9b6",
-                "ok": "#6ccb5f", "warn": "#fce100", "err": "#ff99a4",
-                "scroll_trough": "#1b1b1f", "scroll_thumb": "#4a4a52",
-            },
-            "light": {
-                "bg": "#f3f3f3", "surface": "#ffffff", "surface2": "#f9f9f9",
-                "border": "#e1e1e4", "text": "#1b1b1f", "muted": "#5f5f6a",
-                "accent": "#0f6cbd", "on_accent": "#ffffff", "input_bg": "#ffffff",
-                "user_text": "#ffffff", "assistant_text": "#1b1b1f",
-                "user_bg": "#0f6cbd", "assistant_bg": "#ffffff",
-                "user_border": "#0f6cbd", "assistant_border": "#e1e1e4",
-                "chip_bg": "#ededf0", "chip_text": "#5f5f6a",
-                "ok": "#0f7b0f", "warn": "#9d5d00", "err": "#c42b1c",
-                "scroll_trough": "#f3f3f3", "scroll_thumb": "#c8c8cc",
-            },
-        },
+        "palette": {"dark": window_palette("dark"), "light": window_palette("light")},
     },
     "neon": {
         "title": "Направление B — «Тёмный футуризм»",
@@ -1008,7 +991,7 @@ def render(style_name: str, page: str, theme: str, out_path: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Нарисовать макет интерфейса Jarvis")
-    parser.add_argument("--style", default="fluent", choices=[*STYLES, "all"])
+    parser.add_argument("--style", default="fluent", choices=[*STYLES, "all", "tokens"])
     parser.add_argument("--page", default="chat", choices=[item[0] for item in PAGES])
     parser.add_argument("--theme", default="dark", choices=["dark", "light", "both"])
     parser.add_argument("--out-dir", default=str(PROJECT_ROOT / "docs" / "style"))
@@ -1020,6 +1003,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Нужен Pillow (только для этого инструмента): pip install Pillow", file=sys.stderr)
         return 1
 
+    if args.style == "tokens":  # лист токенов темы — по одному на тему
+        themes = ["dark", "light"] if args.theme == "both" else [args.theme]
+        for theme_name in themes:
+            print("Готово:", render_tokens(theme_name, Path(args.out_dir) / f"tokens-{theme_name}.png"))
+        return 0
+
     styles = list(STYLES) if args.style == "all" else [args.style]
     themes = ["dark", "light"] if args.theme == "both" else [args.theme]
     pages = [item[0] for item in PAGES] if (args.style == "all" or args.page == "all") else [args.page]
@@ -1029,6 +1018,138 @@ def main(argv: list[str] | None = None) -> int:
                 name = f"{style_name}-{page}-{theme}.png"
                 print("Готово:", render(style_name, page, theme, Path(args.out_dir) / name))
     return 0
+
+
+
+
+# ------------------------------------------------- лист токенов (шпаргалка темы)
+
+
+def render_tokens(theme_name: str, out_path: Path) -> Path:
+    """Лист токенов темы: палитра, шкалы, шрифты, состояния, контраст.
+
+    Рисуется прямо из ``jarvis.interfaces.theme`` — это и документация, и
+    проверка глазами: поменяли цвет или размер в теме, картинка обновилась.
+    """
+    from PIL import Image, ImageDraw
+
+    from jarvis.interfaces import theme as tokens
+
+    palette = tokens.PALETTES[theme_name]
+    width, height = 1180, 860
+    image = Image.new("RGBA", (width, height), palette["bg"])
+    draw = ImageDraw.Draw(image)
+    ink, soft, line = palette["text"], palette["muted"], palette["border"]
+    radius, space = tokens.RADIUS, tokens.SPACE
+
+    def text(x, y, string, size=15, color=None, bold=False, mono=False, anchor="la"):
+        kind = "mono" if mono else ("sans_bold" if bold else "sans")
+        draw.text((x, y), string, font=font(kind, size), fill=color or ink, anchor=anchor)
+
+    def card(box):
+        draw.rounded_rectangle(box, radius=radius["card"], fill=palette["surface"], outline=line)
+
+    text(28, 24, f"Jarvis — тема «{theme_name}»", 24, ink, bold=True)
+    text(28, 58, "цвета, отступы, шрифты и скругления окна живут в "
+                 "jarvis/interfaces/theme.py", 15, soft)
+
+    # ---------------------------------------------------------------- палитра
+    px = 28
+    card((px - 16, 88, px + 452, 640))
+    text(px, 102, "Палитра", 17, ink, bold=True)
+    roles = [
+        ("bg", "фон окна"), ("surface", "карточка, панель"), ("surface2", "поле, вторичная кнопка"),
+        ("input_bg", "поле ввода"), ("border", "граница"), ("field_border", "граница поля"),
+        ("text", "основной текст"), ("muted", "подпись"), ("accent", "акцент"),
+        ("on_accent", "текст на акценте"), ("user_bg", "плашка пользователя"),
+        ("assistant_bg", "плашка ассистента"), ("ok", "хорошо"), ("warn", "внимание"), ("err", "ошибка"),
+    ]
+    row = 134
+    for key, title in roles:
+        draw.rounded_rectangle((px, row, px + 34, row + 22), radius=4, fill=palette[key], outline=line)
+        text(px + 46, row + 11, f"{key:<14} {palette[key]}", 14, ink, mono=True, anchor="lm")
+        text(px + 268, row + 11, title, 14, soft, anchor="lm")
+        row += 33
+
+    # -------------------------------------------------------- шкалы (колонка 2)
+    sx = 500
+    card((sx - 16, 88, sx + 320, 318))
+    text(sx, 102, "Шкала отступов (px)", 17, ink, bold=True)
+    bar = 138
+    for name, value in space.items():
+        draw.rounded_rectangle((sx, bar, sx + value * 3, bar + 18), radius=3, fill=palette["accent"])
+        text(sx + 200, bar + 9, f"{value} · {name}", 14, ink, mono=True, anchor="lm")
+        bar += 36
+
+    card((sx - 16, 318, sx + 320, 520))
+    text(sx, 332, "Скругления (px)", 17, ink, bold=True)
+    box_x = sx
+    for name, value in (("button", radius["button"]), ("card", radius["card"]),
+                        ("bubble", radius["bubble"]), ("pill", 14)):
+        draw.rounded_rectangle((box_x, 368, box_x + 60, 418), radius=min(value, 26),
+                               fill=palette["surface2"], outline=line)
+        text(box_x + 30, 432, name, 13, soft, anchor="mm")
+        text(box_x + 30, 450, str(value), 13, ink, mono=True, anchor="mm")
+        box_x += 76
+
+    card((sx - 16, 520, sx + 320, 700))
+    text(sx, 534, "Состояния индикатора", 17, ink, bold=True)
+    state_x, state_y, index = sx, 572, 0
+    for name, color in tokens.STATE_COLORS[theme_name].items():
+        draw.ellipse((state_x, state_y - 8, state_x + 16, state_y + 8), fill=color)
+        text(state_x + 24, state_y, name, 13, soft, anchor="lm")
+        index += 1
+        if index == 3:                      # две колонки по три состояния
+            state_x, state_y = sx + 150, 572
+        else:
+            state_y += 32
+
+    # ------------------------------------------------------ шрифты (колонка 3)
+    fx = 856
+    card((fx - 16, 88, fx + 308, 400))
+    text(fx, 102, "Шкала шрифтов", 17, ink, bold=True)
+    samples = {"title": "Jarvis", "heading": "Настройки", "body": "Спросите что-нибудь",
+               "caption": "подпись", "mono": "journal.jsonl"}
+    font_y = 142
+    for name, spec in tokens.FONTS.items():
+        text(fx, font_y, samples[name], spec["size"], ink,
+             bold=spec.get("weight") == "bold", mono=name == "mono")
+        text(fx + 280, font_y + 6, f"{name} {spec['size']}", 13, soft, anchor="ra")
+        font_y += spec["size"] + 20
+    text(fx, 330, "Segoe UI Variable / Segoe UI — Windows", 13, soft)
+    text(fx, 352, "Noto Sans / DejaVu Sans — Linux", 13, soft)
+    text(fx, 374, "моно: Cascadia Mono · Consolas · DejaVu Sans Mono", 13, soft)
+
+    card((fx - 16, 400, fx + 308, 700))
+    text(fx, 414, "Состояния кнопки", 17, ink, bold=True)
+    states = [
+        ("обычная", palette["surface2"], ink, False),
+        ("наведение", palette["chip_bg"], ink, False),
+        ("нажатие", palette["surface"], ink, False),
+        ("недоступна", translucent(palette["bg"], palette["muted"], 0.14), palette["muted"], False),
+        ("фокус", palette["accent"], palette["on_accent"], True),
+    ]
+    cursor_y = 452
+    for name, fill, foreground, focused in states:
+        draw.rounded_rectangle((fx, cursor_y, fx + 118, cursor_y + 34), radius=radius["button"],
+                               fill=fill, outline=palette["accent"] if focused else line,
+                               width=2 if focused else 1)
+        text(fx + 59, cursor_y + 18, "Отправить", 14, foreground, anchor="mm")
+        text(fx + 132, cursor_y + 18, name, 13, soft, anchor="lm")
+        cursor_y += 44
+
+    # ------------------------------------------------------------ контраст
+    rows = tokens.audit(theme_name)
+    worst = min(rows, key=lambda item: item[1] / item[2])
+    text(28, 736, "Контраст по WCAG:", 15, ink, bold=True)
+    text(28, 762, f"пар проверено {len(rows)} · ниже порога {sum(1 for row in rows if not row[3])}"
+                  f" · ближайшая к порогу — {worst[1]}:1 из {worst[2]}:1 ({worst[0]})", 13, soft)
+    text(28, 786, "правишь цвет в теме — эта картинка и tools/contrast_check.py меняются вместе с ним",
+         13, soft)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    image.convert("RGB").save(out_path)
+    return out_path
 
 
 if __name__ == "__main__":
