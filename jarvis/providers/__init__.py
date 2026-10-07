@@ -18,17 +18,8 @@ log = logging.getLogger("jarvis.providers")
 
 
 def substitute(text: str) -> str:
-    """Подставляет пути в командах из конфига."""
-    if not text:
-        return text or ""
-    return (
-        text.replace("{base}", str(paths.PROJECT_ROOT))
-        .replace("{legacy}", str(paths.legacy_dir()))
-        .replace("{state}", str(paths.state_dir()))
-        .replace("{config}", str(paths.config_dir()))
-        .replace("{home}", str(Path.home()))
-        .replace("{python}", sys.executable)
-    )
+    """Подставляет пути в командах из конфига (см. ``core.paths.substitute``)."""
+    return paths.substitute(text)
 
 
 class Providers:

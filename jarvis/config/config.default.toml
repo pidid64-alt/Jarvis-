@@ -92,10 +92,13 @@ min_notify_interval_seconds = 300
 rules = []
 
 [api]
-enabled = true             # локальный API для окна/трея: 127.0.0.1, токен в файле
+# Локальный API — единственная дверь между ядром и окном/треем.
+# Слушает только 127.0.0.1 и требует токен (файл 0600, порт — {state}/api.json).
+enabled = true
 host = "127.0.0.1"
 port = 0                   # 0 — выбрать свободный порт автоматически
 token_file = "{state}/api.token"
+confirm_timeout_seconds = 60   # сколько ждать ответа на «Выполнить опасное действие?»
 
 [ui]
 close_to_tray = true

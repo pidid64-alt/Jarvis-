@@ -36,6 +36,7 @@ class Daemon:
         self._pid_file = paths.pid_file()
         self._trigger_file = paths.state_dir() / "trigger"
         self._hotkey_listener = None
+        self._api = None
 
     # ------------------------------------------------------------------ start
     def start(self) -> None:
@@ -45,11 +46,27 @@ class Daemon:
             signal.signal(signal.SIGUSR1, lambda *_: self.trigger.set())
         signal.signal(signal.SIGTERM, lambda *_: self.stopping.set())
         signal.signal(signal.SIGINT, lambda *_: self.stopping.set())
+        self._start_api()
         self._start_hotkey()
         if bool(self.assistant.config.get("voice.wakeword.enabled", False)):
             self._start_wakeword()
         self.assistant.events.publish("daemon_started")
         self.assistant.journal.info("daemon", "Jarvis запущен и ждёт команды")
+
+    def _start_api(self) -> None:
+        """Локальный API для окна и трея (только 127.0.0.1, токен в файле)."""
+        if not bool(self.assistant.config.get("api.enabled", True)):
+            self.assistant.journal.info("daemon", "локальный API выключен в настройках")
+            return
+        from .api import ApiError, LocalApi
+
+        try:
+            self._api = LocalApi(self.assistant)
+            self._api.start()
+            self.assistant.journal.info("daemon", f"локальный API слушает {self._api.url}")
+        except ApiError as exc:
+            self._api = None
+            self.assistant.journal.error("daemon", f"локальный API не поднялся: {exc}")
 
     def _start_hotkey(self) -> None:
         spec = str(self.assistant.config.get("hotkey.spec", "Super+J"))
@@ -162,6 +179,9 @@ class Daemon:
     def stop(self) -> None:
         if self._hotkey_listener is not None:
             self._hotkey_listener.stop()
+        if self._api is not None:
+            self._api.stop()
+            self._api = None
         self.assistant.shutdown()
         try:
             self._pid_file.unlink(missing_ok=True)

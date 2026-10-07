@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -53,14 +52,7 @@ class SkillContext:
 
     def substitute(self, template: str) -> str:
         """``{legacy}/scripts/x.sh`` → абсолютный путь."""
-        return (
-            template.replace("{base}", str(paths.PROJECT_ROOT))
-            .replace("{legacy}", str(paths.legacy_dir()))
-            .replace("{state}", str(paths.state_dir()))
-            .replace("{config}", str(paths.config_dir()))
-            .replace("{home}", str(Path.home()))
-            .replace("{python}", sys.executable)
-        )
+        return paths.substitute(template)
 
     def run(
         self,

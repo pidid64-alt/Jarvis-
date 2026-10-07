@@ -80,6 +80,17 @@ def referenced_env_names(value: Any) -> list[str]:
     return names
 
 
+def _substitute_paths(node: Any) -> Any:
+    """Раскрывает ``{state}``, ``{legacy}`` и другие подстановки в значениях."""
+    if isinstance(node, dict):
+        return {key: _substitute_paths(value) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_substitute_paths(item) for item in node]
+    if isinstance(node, str):
+        return paths.substitute(node)
+    return node
+
+
 def _deep_merge(base: dict, override: dict) -> dict:
     result = dict(base)
     for key, value in override.items():
@@ -140,12 +151,20 @@ class Config:
                 raise ConfigError(f"{cfg_path}: {exc}") from exc
         merged = _deep_merge(defaults, raw)
         resolved, missing = resolve_refs(merged)
+        # Пути вида {state}/... раскрываем сразу: так ни один потребитель
+        # настроек не получит в руки строку с нераскрытой подстановкой.
+        resolved = _substitute_paths(resolved)
         return cls(resolved, cfg_path, missing, raw=merged)
 
     # ------------------------------------------------------------------ read
     @property
     def data(self) -> dict[str, Any]:
         return self._data
+
+    @property
+    def raw_data(self) -> dict[str, Any]:
+        """Сырые значения файла: видно, где стоит ссылка ``${ИМЯ}``, а не значение."""
+        return self._raw
 
     def get(self, dotted: str, default: Any = None) -> Any:
         node: Any = self._data

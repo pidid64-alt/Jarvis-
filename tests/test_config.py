@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 import unittest
+from pathlib import Path
 
 from tests.helpers import isolated_home  # noqa: F401
 
@@ -83,11 +85,32 @@ class ConfigTests(unittest.TestCase):
             del os.environ["JARVIS_TEST_KEY"]
 
     def test_missing_secret_reported_by_name_not_value(self):
+        os.environ.pop("JARVIS_LLM_KEY", None)
         with isolated_home():
             config = Config.load()
             self.assertIn("JARVIS_LLM_KEY", config.missing_env)
             self.assertTrue(config.is_empty_secret("llm.api_key"))
             self.assertEqual(config.get("llm.api_key"), "")
+
+    def test_path_placeholders_are_resolved(self):
+        """{state}/{legacy}/... раскрываются сразу, чтобы никто не получил «{state}» строкой."""
+        with isolated_home():
+            config = Config.load()
+            token_file = config.get("api.token_file")
+            self.assertNotIn("{", token_file)
+            self.assertEqual(Path(token_file), paths.state_dir() / "api.token")
+            self.assertEqual(config.get("tts.data_dir"), str(paths.legacy_dir() / "models"))
+            self.assertTrue(config.get("stt.model").startswith(str(paths.legacy_dir())))
+            # подстановка {python} — это тот же интерпретатор, что запустил программу
+            self.assertIn(sys.executable, config.get("tts.server_command"))
+
+    def test_path_substitution_helper(self):
+        with isolated_home():
+            self.assertEqual(paths.substitute("{state}/x"), str(paths.state_dir() / "x"))
+            self.assertEqual(paths.substitute("{legacy}/y"), str(paths.legacy_dir() / "y"))
+            self.assertEqual(paths.substitute("{base}"), str(paths.PROJECT_ROOT))
+            self.assertEqual(paths.substitute(""), "")
+            self.assertEqual(paths.substitute("без подстановок"), "без подстановок")
 
     def test_reference_helpers(self):
         value, missing = resolve_refs({"a": "${NOPE}", "b": "${NOPE:default}"})

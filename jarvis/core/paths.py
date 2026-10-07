@@ -109,8 +109,37 @@ def token_file() -> Path:
     return state_dir() / "api.token"
 
 
+def api_file() -> Path:
+    """Файл обнаружения API (0600): адрес и порт, чтобы интерфейсы нашли ядро."""
+    return state_dir() / "api.json"
+
+
 def pid_file() -> Path:
     return state_dir() / "jarvis.pid"
+
+
+PLACEHOLDERS = ("base", "legacy", "state", "config", "home", "python")
+
+
+def substitute(text: str) -> str:
+    """Раскрывает подстановки путей в строке из настроек или навыка.
+
+    ``{legacy}/scripts/x.sh`` → ``/home/пользователь/Jarvis-/legacy/scripts/x.sh``.
+    Абсолютные пути не зависят от того, где лежит репозиторий, поэтому в файлах
+    хранятся именно подстановки, а не готовые пути.
+    """
+    if not text:
+        return text or ""
+    import sys
+
+    return (
+        text.replace("{base}", str(PROJECT_ROOT))
+        .replace("{legacy}", str(legacy_dir()))
+        .replace("{state}", str(state_dir()))
+        .replace("{config}", str(config_dir()))
+        .replace("{home}", str(Path.home()))
+        .replace("{python}", sys.executable)
+    )
 
 
 def ensure_dirs() -> None:

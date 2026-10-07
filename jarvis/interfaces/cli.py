@@ -69,6 +69,10 @@ def build_parser() -> argparse.ArgumentParser:
     migrate.add_argument("--force", action="store_true", help="перезаписать config.toml")
 
     sub.add_parser("autonomy", help="прогнать автономные проверки один раз")
+
+    gui = sub.add_parser("gui", help="открыть окно (Tkinter)")
+    gui.add_argument("--no-tray", action="store_true", help="без значка в трее")
+    gui.add_argument("--start-minimized", action="store_true", help="сразу свернуть в трей")
     return parser
 
 
@@ -295,6 +299,19 @@ def cmd_autonomy(args) -> int:
     return 0
 
 
+def cmd_gui(args) -> int:
+    from .gui import main as gui_main
+
+    argv = []
+    if getattr(args, "no_tray", False):
+        argv.append("--no-tray")
+    if getattr(args, "start_minimized", False):
+        argv.append("--start-minimized")
+    if getattr(args, "debug", False):
+        argv.append("--debug")
+    return gui_main(argv)
+
+
 COMMANDS = {
     "run": cmd_run,
     "ask": cmd_ask,
@@ -307,6 +324,7 @@ COMMANDS = {
     "secret": cmd_secret,
     "migrate": cmd_migrate,
     "autonomy": cmd_autonomy,
+    "gui": cmd_gui,
 }
 
 

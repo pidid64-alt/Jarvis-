@@ -15,9 +15,16 @@ if str(PROJECT_ROOT) not in sys.path:
 
 @contextlib.contextmanager
 def isolated_home():
-    """Временный JARVIS_HOME: тесты не трогают настоящие настройки."""
+    """Временный JARVIS_HOME: тесты не трогают настоящие настройки.
+
+    Заодно запоминаем и возвращаем переменные ``JARVIS_*``: сохранение секрета
+    в одном тесте не должно влиять на проверки секретов в другом.
+    """
     previous = os.environ.get("JARVIS_HOME")
+    saved_env = {key: value for key, value in os.environ.items() if key.startswith("JARVIS_")}
     with tempfile.TemporaryDirectory(prefix="jarvis-test-") as folder:
+        for key in list(saved_env):
+            os.environ.pop(key, None)
         os.environ["JARVIS_HOME"] = folder
         (Path(folder) / "config").mkdir(parents=True, exist_ok=True)
         (Path(folder) / "state").mkdir(parents=True, exist_ok=True)
@@ -29,6 +36,9 @@ def isolated_home():
         try:
             yield Path(folder)
         finally:
+            for key in [item for item in os.environ if item.startswith("JARVIS_")]:
+                os.environ.pop(key, None)
+            os.environ.update(saved_env)
             if previous is None:
                 os.environ.pop("JARVIS_HOME", None)
             else:

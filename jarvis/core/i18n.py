@@ -68,6 +68,10 @@ class Translator:
                     return text
         return key
 
+    def __call__(self, key: str, **values: Any) -> str:
+        """Короткая форма: ``translator("gui.title")`` — то же, что ``.t(...)``."""
+        return self.t(key, **values)
+
     def set_language(self, language: str) -> None:
         self.language = language or DEFAULT_LANGUAGE
 
