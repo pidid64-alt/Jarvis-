@@ -115,7 +115,8 @@ class Daemon:
             if self.autonomy is not None and tick % 3 == 0:
                 self._run_autonomy()
             if self.assistant.providers is not None:
-                self.assistant.providers.maintain()
+                # заодно гасим серверы MCP, к которым давно не обращались
+                self.assistant.maintain()
         self.stop()
 
     def _wait_for_trigger(self, timeout: float) -> bool:

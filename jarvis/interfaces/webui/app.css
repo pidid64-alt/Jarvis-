@@ -365,6 +365,11 @@ main { flex: 1; min-height: 0; display: flex; }
 .skill-main { min-width: 0; flex: 1; }
 .skill-title { display: flex; align-items: center; gap: var(--space-s); flex-wrap: wrap; }
 .skill-title b { font-weight: 650; }
+.mcp-line {
+  margin: 0 0 4px;
+  font-size: var(--font-caption);
+}
+
 .skill-examples {
   margin: 0;
   font-size: var(--font-caption);

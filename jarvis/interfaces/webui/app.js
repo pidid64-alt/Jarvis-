@@ -59,6 +59,12 @@ const LABELS = {
   "error.details": "Подробности: {reason}",
   "voice.unavailable": "Микрофон недоступен: {reason}. Запись звука ставится отдельно: pip install -e \"[voice]\"",
   "provider.search": "Поиск",
+  "mcp.none": "Серверы MCP не настроены. Файл настроек:",
+  "mcp.ready": "готов",
+  "mcp.off": "выключен",
+  "mcp.problem": "не подключился",
+  "mcp.tools": "инструментов: {count}",
+  "mcp.missing_env": "Не заданы переменные окружения: {names}",
   "about.copied": "Сведения о программе скопированы",
   "about.stop": "Остановить Jarvis",
   "about.stop_hint": "Ядро выключится, окно перестанет отвечать. Запустить снова: jarvis gui",
@@ -444,6 +450,36 @@ if (typeof document !== "undefined") {
     }
     if (skill.confirm || permissions.dangerous) chips.push(t("skills.confirm"));
     return chips.length ? chips : ["только ответы"];
+  }
+
+  /** Серверы MCP: что настроено и сколько инструментов (ключи не показываем). */
+  function renderMcp(mcp) {
+    const box = el("mcp-list");
+    if (!box) return;
+    const data = mcp || {};
+    const servers = data.servers || [];
+    box.textContent = "";
+    if (!servers.length) {
+      box.textContent = `${t("mcp.none")} ${data.path || ""}`.trim();
+      return;
+    }
+    for (const server of servers) {
+      const line = document.createElement("p");
+      line.className = "mcp-line";
+      const state = server.enabled
+        ? (server.problem ? t("mcp.problem") : t("mcp.ready"))
+        : t("mcp.off");
+      const count = t("mcp.tools", { count: server.tools || 0 });
+      line.textContent = `${server.name} (${server.kind}) · ${state} · ${count}`;
+      if (server.problem) line.title = server.problem;
+      box.appendChild(line);
+    }
+    if (data.missing_env && data.missing_env.length) {
+      const line = document.createElement("p");
+      line.className = "mcp-line";
+      line.textContent = t("mcp.missing_env", { names: data.missing_env.join(", ") });
+      box.appendChild(line);
+    }
   }
 
   function renderSkills() {
@@ -971,7 +1007,9 @@ if (typeof document !== "undefined") {
       }
       el("conn").textContent = "ядро на связи";
       document.body.dataset.connected = "true";
+      state.status = status;
       updateVoiceHint(status);
+      renderMcp(status.mcp);
     } catch (error) {
       el("conn").textContent = "ядро не отвечает";
       document.body.dataset.connected = "false";

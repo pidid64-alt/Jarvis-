@@ -264,6 +264,15 @@ class PageLogicTests(unittest.TestCase):
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr[-800:])
 
+    def test_css_uses_only_defined_variables(self):
+        """Опечатка в имени переменной стиля (--font-sm вместо --font-caption) видна сразу."""
+        import re
+
+        css = (WEBUI / "app.css").read_text(encoding="utf-8")
+        defined = set(re.findall(r"^\s*(--[\w-]+)\s*:", css, flags=re.M))
+        used = set(re.findall(r"var\(\s*(--[\w-]+)", css))
+        self.assertEqual(sorted(used - defined), [], "в стилях есть ссылки на несуществующие переменные")
+
     def test_pure_helpers(self):
         if not self.node:
             self.skipTest("node не установлен — проверки логики пропущены")

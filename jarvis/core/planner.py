@@ -31,6 +31,9 @@ SYSTEM_PROMPT = """Ты — {name}, локальный ассистент пол
 
 1. Выполнить действие из списка доступных:
    {{"action": "run", "id": "<id из списка>", "confirmation": false}}
+   Если в описании действия написано «нужно указать: ...», добавь короткие
+   аргументы строкой: {{"action": "run", "id": "...", "args": {{"city": "Астана"}}}}
+   Значения аргументов бери из слов пользователя; ничего не выдумывай.
 2. Ответить словами (если это вопрос или беседа):
    {{"action": "speak", "text": "короткий ответ до {max_speak} символов"}}
 3. Уточнить, если непонятно:
@@ -40,6 +43,8 @@ SYSTEM_PROMPT = """Ты — {name}, локальный ассистент пол
 
 Правила:
 - Никогда не выдумывай id: только из списка ниже.
+- Аргументы (args) допустимы только для действий вида «mcp.<сервер>.<инструмент>»
+  и только со значениями из слов пользователя.
 - Никогда не возвращай команды, пути или код — только JSON по схеме.
 - Если просьб несколько — верни несколько действий в порядке произнесения.
 - Для действий, помеченных confirm=true, ставь "confirmation": true.
@@ -61,6 +66,8 @@ class PlannedAction:
     query: str = ""
     open_browser: bool = False
     confirmation: bool = False
+    #: короткие аргументы для инструментов MCP (только простые значения)
+    arguments: dict[str, Any] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -153,10 +160,21 @@ def parse_actions(raw: str, valid_ids: Iterable[str]) -> list[PlannedAction]:
             if action_id not in known:
                 log.warning("модель предложила неизвестное действие %r — пропуск", action_id)
                 continue
+            arguments: dict[str, Any] = {}
+            if action_id.startswith("mcp."):
+                # Аргументы разрешены только инструментам MCP: у обычных действий
+                # аргументы берутся из фразы, а не из ответа модели.
+                from .mcp import validate_args
+
+                arguments = validate_args(item.get("args") or item.get("arguments"))
+            elif item.get("args") or item.get("arguments"):
+                log.warning("модель передала аргументы обычному действию %r — пропуск", action_id)
+                continue
             result.append(PlannedAction(
                 kind="run",
                 action_id=action_id,
                 confirmation=bool(item.get("confirmation") or item.get("needs_confirmation")),
+                arguments=arguments,
             ))
         elif kind in {"speak", "ask"}:
             text = str(item.get("text", "")).strip()[:MAX_SPEAK_CHARS]

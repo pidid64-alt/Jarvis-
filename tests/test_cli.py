@@ -27,6 +27,83 @@ def run_cli(home: Path, *args: str, input_text: str | None = None, timeout: int 
     )
 
 
+class McpCommandTests(unittest.TestCase):
+    """`jarvis mcp`: что настроено, какие инструменты и проверка вызова."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="jarvis-mcp-")
+        self.home = Path(self._tmp.name)
+        (self.home / "config").mkdir(parents=True, exist_ok=True)
+        (self.home / "state").mkdir(parents=True, exist_ok=True)
+        self.addCleanup(self._tmp.cleanup)
+        self.server = PROJECT_ROOT / "tests" / "fake_mcp_server.py"
+
+    def write_server(self, *, enabled: bool = True) -> None:
+        (self.home / "config" / "mcp.toml").write_text(
+            "[mcp]\nenabled = true\n\n[[server]]\n"
+            'name = "fake"\n'
+            f'command = "{sys.executable}"\n'
+            f'args = ["{self.server}"]\n'
+            f"enabled = {str(enabled).lower()}\n"
+            'description = "Подставной сервер"\n',
+            encoding="utf-8",
+        )
+
+    def test_without_servers_it_creates_the_file_and_explains(self):
+        result = run_cli(self.home, "mcp")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("файл настроек", result.stdout)
+        self.assertIn("пока пусто", result.stdout)
+        self.assertTrue((self.home / "config" / "mcp.toml").exists())
+
+    def test_tools_are_listed(self):
+        self.write_server()
+        result = run_cli(self.home, "mcp")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("fake", result.stdout)
+        self.assertIn("echo", result.stdout)
+        self.assertIn("jarvis mcp --call fake.echo", result.stdout)
+
+    def test_call_runs_the_tool_with_arguments(self):
+        self.write_server()
+        result = run_cli(self.home, "mcp", "--call", "fake.sum", "--arg", "a=2", "--arg", "b=3")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("5.0", result.stdout)
+
+    def test_call_without_server_is_rejected(self):
+        self.write_server()
+        result = run_cli(self.home, "mcp", "--call", "echo")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("сервер.инструмент", result.stdout)
+
+    def test_json_output_is_machine_readable(self):
+        self.write_server()
+        result = run_cli(self.home, "mcp", "--json", "--tools")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["servers"][0]["name"], "fake")
+        self.assertTrue(any(tool["id"] == "fake.echo" for tool in data["tools"]))
+
+    def test_disabled_server_is_not_called(self):
+        self.write_server(enabled=False)
+        result = run_cli(self.home, "mcp")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("выключен", result.stdout)
+
+    def test_secrets_are_not_printed(self):
+        (self.home / "config" / "mcp.toml").write_text(
+            "[mcp]\nenabled = true\n\n[[server]]\n"
+            'name = "fake"\n'
+            f'command = "{sys.executable}"\n'
+            f'args = ["{self.server}"]\n'
+            'env = { TOKEN = "${MCP_CLI_SECRET}" }\n',
+            encoding="utf-8",
+        )
+        result = run_cli(self.home, "mcp", extra_env={"MCP_CLI_SECRET": "очень-секретный-токен"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("очень-секретный-токен", result.stdout + result.stderr)
+
+
 class LlmCommandTests(unittest.TestCase):
     """`jarvis llm` показывает, что уходит модели; ключ в вывод не попадает."""
 

@@ -154,6 +154,24 @@ class SkillRegistry:
         action = skill.action(action_id)
         return (skill, action) if action else None
 
+    def add_skill(self, skill: Skill, handler: Any = None) -> None:
+        """Регистрирует навык, живущий в памяти (например, инструменты MCP).
+
+        ``handler`` — модуль с ``HANDLERS`` или сам словарь функций: файла на
+        диске у такого навыка нет, но всё остальное (права, подтверждения,
+        журнал, переключатель в окне) работает как у обычного.
+        """
+        for action in skill.actions:
+            self.policy.mark_dangerous(action)
+        self._skills[skill.id] = skill
+        if handler is not None:
+            self._handlers[skill.id] = handler
+
+    def remove_skill(self, skill_id: str) -> None:
+        """Убирает навык, живущий в памяти."""
+        self._skills.pop(skill_id, None)
+        self._handlers.pop(skill_id, None)
+
     def flat_action_ids(self) -> list[str]:
         return [f"{skill.id}.{action.id}" for skill in self.all() for action in skill.actions]
 

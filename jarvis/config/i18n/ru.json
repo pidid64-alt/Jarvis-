@@ -194,5 +194,16 @@
   "skill.files.missing": "Файл «{name}» не нашёл в домашних папках.",
   "skill.search.failed": "Поиск не сработал: {reason}",
   "skill.search.hint": "Если поиск не нужен, скажите иначе — я попробую другой навык.",
-  "skill.search.open_failed": "Не удалось открыть браузер: {reason}"
+  "skill.search.open_failed": "Не удалось открыть браузер: {reason}",
+  "skill.mcp.need_args": "Инструменту «{tool}» сервера «{server}» нужны данные: {args}. Скажите их — и я повторю.",
+  "skill.mcp.confirm": "Вызвать инструмент «{tool}» сервера «{server}»? Отправлю: {args}",
+  "skill.mcp.no_confirmation": "Для вызова «{tool}» нужно подтверждение, но окно подтверждения недоступно. Запустите Jarvis с окном или терминалом.",
+  "skill.mcp.cancelled": "Отменяю вызов «{tool}».",
+  "skill.mcp.failed": "Инструмент «{tool}» сервера «{server}» не сработал: {reason}",
+  "skill.mcp.empty": "Инструмент «{tool}» отработал, но ничего не вернул.",
+  "error.mcp": "Инструмент MCP не сработал. Подробности — в журнале.",
+  "skill.mcp.list_title": "Инструменты MCP: серверов {servers}, инструментов {tools}.",
+  "skill.mcp.list_empty": "Инструментов MCP не видно. Проверьте mcp.toml командой: jarvis mcp",
+  "skill.mcp.need_id": "Какой инструмент вызвать? Скажите, например: вызови инструмент fake.echo",
+  "skill.mcp.unknown_tool": "Не знаю инструмент «{name}». Посмотрите список: «какие инструменты MCP»."
 }

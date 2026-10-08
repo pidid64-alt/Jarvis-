@@ -36,7 +36,8 @@ class Assistant:
 
     def __init__(self, config: Any, *, providers: Any = None, journal: Journal | None = None,
                  events: EventBus | None = None, dialog: DialogLog | None = None,
-                 conversation: ConversationState | None = None, policy: PermissionPolicy | None = None):
+                 conversation: ConversationState | None = None, policy: PermissionPolicy | None = None,
+                 mcp: Any = None):
         self.config = config
         self.journal = journal or Journal()
         self.events = events or EventBus()
@@ -53,7 +54,10 @@ class Assistant:
         self.registry = SkillRegistry(self.policy, disabled=config.get("skills.disabled", []),
                                       journal=self.journal)
         self.registry.scan()
-        self.router = Router(self.registry, self.providers, config, journal=self.journal)
+        from .mcp import McpRegistry
+
+        self.mcp = mcp if mcp is not None else McpRegistry(config, self.journal)
+        self.router = Router(self.registry, self.providers, config, journal=self.journal, mcp=self.mcp)
         self.executor = Executor(config, self.policy, self.registry, self.journal)
         self._state = State.IDLE
         self._language = str(config.get("assistant.language", "ru"))
@@ -81,6 +85,10 @@ class Assistant:
             self.router.providers = self.providers
             self.router.config = self.config
         self.registry.scan()
+        if getattr(self, "mcp", None) is not None:
+            from .mcp import attach
+
+            attach(self.registry, self.mcp)
         self.events.publish("skills_changed", count=len(self.registry.all()))
 
     # ------------------------------------------------------------------ state
@@ -320,6 +328,7 @@ class Assistant:
                 "problems": list(self.registry.problems),
             },
             "providers": self.providers.state(),
+            "mcp": self.mcp.status(),
             "config_path": str(paths.config_path()),
             "state_dir": str(paths.state_dir()),
             "voice_enabled": self.providers.voice_enabled,
@@ -340,6 +349,14 @@ class Assistant:
     def shutdown(self) -> None:
         """Останавливает серверы, поднятые по требованию."""
         self.providers.stop()
+        if getattr(self, "mcp", None) is not None:
+            self.mcp.close()
+
+    def maintain(self) -> None:
+        """Периодическая уборка: гасим всё, чем давно не пользовались."""
+        self.providers.maintain()
+        if getattr(self, "mcp", None) is not None:
+            self.mcp.stop_if_idle()
 
 
 def create_assistant(config: Any = None, *, debug: bool = False, **kwargs: Any) -> Assistant:

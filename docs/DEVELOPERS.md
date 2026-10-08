@@ -258,3 +258,13 @@ python tools/contrast_check.py       # контраст палитр
 python tools/measure_memory.py       # память (по желанию)
 python -m compileall -q jarvis tools tests
 ```
+
+### MCP-серверы
+
+Инструменты MCP живут в двух местах: транспорт и протокол —
+`jarvis/providers/mcp.py` (stdio и HTTP, JSON-RPC), превращение инструментов в
+действия — `jarvis/core/mcp.py` (чтение `mcp.toml`, ленивое подключение,
+подтверждения, бездействие). Навык «Инструменты MCP» — виртуальный: он не лежит
+на диске, а собирается в памяти (`SkillRegistry.add_skill`), поэтому права,
+переключатель и журнал у него те же, что у обычных навыков. Подробности и
+правила безопасности — `docs/MCP.md`.

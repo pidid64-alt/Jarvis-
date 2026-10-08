@@ -23,6 +23,9 @@ from .types import Intent
 
 log = get_logger("core.router")
 
+#: как часто пробовать снова, если серверы MCP не ответили
+MCP_RETRY_SECONDS = 60.0
+
 CONFIRM_WORDS = {"да", "ага", "угу", "давай", "подтверждаю", "выполняй", "точно", "конечно", "ок", "окей",
                  "yes", "y", "ok", "sure"}
 DENY_WORDS = {"нет", "не", "неа", "отмена", "отмени", "стоп", "не надо", "не нужно", "no", "n", "cancel"}
@@ -64,15 +67,51 @@ class RouteResult:
 class Router:
     """Выбирает действия по тексту."""
 
-    def __init__(self, registry, providers, config, *, journal=None):
+    def __init__(self, registry, providers, config, *, journal=None, mcp=None):
         self.registry = registry
         self.providers = providers
         self.config = config
         self.journal = journal
+        #: серверы MCP: их инструменты становятся действиями навыка «mcp»
+        self.mcp = mcp
+        self._mcp_try = 0.0
+
+    # ------------------------------------------------------------------- MCP
+    def add_mcp_tools(self) -> None:
+        """Подключает инструменты MCP перед разговором с моделью.
+
+        Лениво: серверы поднимаются только когда фразу не разобрал ни один
+        навык и понадобилась модель (на слабой машине это заметная экономия).
+        Если серверы не ответили, повторяем попытку не чаще, чем раз в минуту,
+        чтобы не тормозить каждый запрос.
+        """
+        mcp = self.mcp
+        if mcp is None or not mcp.enabled:
+            return
+        if self.registry.get("mcp") is not None and mcp.tools():
+            return
+        now = time.monotonic()
+        if now - self._mcp_try < MCP_RETRY_SECONDS:
+            return
+        self._mcp_try = now
+        from .mcp import attach
+
+        if attach(self.registry, mcp):
+            log.info("инструменты MCP добавлены: %d", len(mcp.tools()))
+            if self.journal is not None:
+                self.journal.info("core.mcp", f"подключено инструментов: {len(mcp.tools())}")
+        elif mcp.problems:
+            for name, reason in mcp.problems.items():
+                if self.journal is not None:
+                    self.journal.warning("core.mcp", f"сервер {name}: {reason}")
 
     def route(self, text: str, *, platform: str, allow_llm: bool = True,
               history_tail: list[dict] | None = None, pending: dict | None = None) -> RouteResult:
         started = time.monotonic()
+        # Прямые фразы про MCP («какие инструменты mcp», «вызови инструмент …»)
+        # должны работать и без модели — значит, серверы поднимаем заранее.
+        if self.mcp is not None and self.mcp.enabled and self.mcp.asks_for_mcp(text):
+            self.add_mcp_tools()
         skills = self.registry.enabled(include_hidden=False)
 
         exact = find_exact(text, skills, platform,
@@ -83,6 +122,9 @@ class Router:
 
         llm_error = ""
         if allow_llm:
+            self.add_mcp_tools()
+            if self.registry.get("mcp") is not None and self.registry.get("mcp").enabled:
+                skills = self.registry.enabled(include_hidden=False)
             planned = self._llm_route(text, skills, history_tail or [], pending)
             if planned is not None:
                 if planned:
@@ -162,7 +204,12 @@ class Router:
             skill, action = found
             if item.confirmation and not action.confirm:
                 action = type(action)(**{**action.__dict__, "confirm": True})
-            intents.append(Intent(action=action, skill=skill, score=1.0, source="llm"))
+            intent = Intent(action=action, skill=skill, score=1.0, source="llm")
+            if item.arguments:
+                # аргументы инструмента MCP: короткие значения, которые видно
+                # в вопросе подтверждения
+                intent.args["mcp_arguments"] = item.arguments
+            intents.append(intent)
         return intents
 
     def translator(self, language: str):

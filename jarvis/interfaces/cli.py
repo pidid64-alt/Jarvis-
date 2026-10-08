@@ -10,6 +10,7 @@
     jarvis secret set X    сохранить секрет в .env (значение не печатается)
     jarvis migrate         перенести данные старой версии
     jarvis trigger         разбудить запущенный демон (используется хоткеем)
+    jarvis mcp             серверы MCP: что подключено и какие есть инструменты
 """
 
 from __future__ import annotations
@@ -73,6 +74,14 @@ def build_parser() -> argparse.ArgumentParser:
     llm = sub.add_parser("llm", help="показать запрос к модели (и по желанию отправить)")
     llm.add_argument("--text", default="", help="фраза для примера (по умолчанию «привет»)")
     llm.add_argument("--send", action="store_true", help="действительно отправить и замерить время")
+
+    mcp = sub.add_parser("mcp", help="серверы MCP: список, инструменты, проверка вызова")
+    mcp.add_argument("--tools", action="store_true", help="показать инструменты серверов")
+    mcp.add_argument("--json", action="store_true", help="вывести состояние как JSON")
+    mcp.add_argument("--reload", action="store_true", help="перечитать файл настроек MCP")
+    mcp.add_argument("--call", default="", help="проверить вызов: имя.инструмент")
+    mcp.add_argument("--arg", action="append", default=[], metavar="КЛЮЧ=ЗНАЧЕНИЕ",
+                     help="аргумент для --call (можно несколько раз)")
 
     gui = sub.add_parser("gui", help="открыть окно Jarvis (браузер в режиме приложения)")
     gui.add_argument("--tab", action="store_true", help="открыть обычной вкладкой, без режима приложения")
@@ -441,6 +450,107 @@ def _explain_llm_answer(assistant, answer: str) -> None:
           "остальное решает ядро.")
 
 
+def cmd_mcp(args) -> int:
+    """Серверы MCP: что настроено, какие инструменты и проверка вызова.
+
+    Никаких ключей в вывод не попадает: показываются только имена серверов,
+    команды (без значений окружения) и названия инструментов.
+    """
+    from ..core.mcp import ensure_config_file
+
+    path = ensure_config_file()
+    assistant = _assistant(args.debug)
+    mcp = assistant.mcp
+    if args.reload:
+        mcp.reload()
+
+    if args.json:
+        if args.tools or args.call:
+            mcp.discover()
+        print(json.dumps(mcp.status(), ensure_ascii=False, indent=2))
+        assistant.shutdown()
+        return 0
+
+    print("Серверы MCP")
+    print(f"  файл настроек: {path}")
+    if not mcp.servers():
+        print("  пока пусто — откройте файл и добавьте сервер (в нём есть примеры)")
+        assistant.shutdown()
+        return 0
+
+    for server in mcp.servers():
+        state = "включён" if server.enabled else "выключен"
+        print(f"  {server.name} ({server.kind}, {state})")
+        print(f"    {server.summary()}")
+        if server.description:
+            print(f"    {server.description}")
+    if mcp.missing_env:
+        print(f"  не заданы переменные окружения: {', '.join(mcp.missing_env)}")
+
+    if args.call:
+        if "." not in args.call:
+            print("Укажите инструмент как сервер.инструмент, например files.read_file")
+            assistant.shutdown()
+            return 2
+        server_name, tool_name = args.call.split(".", 1)
+        arguments: dict[str, str] = {}
+        for item in args.arg:
+            if "=" not in item:
+                print(f"Аргумент «{item}» должен быть вида ключ=значение", file=sys.stderr)
+                assistant.shutdown()
+                return 2
+            key, value = item.split("=", 1)
+            arguments[key.strip()] = value
+        print()
+        print(f"Вызываю {server_name}.{tool_name}"
+              + (f" с аргументами: {arguments}" if arguments else ""))
+        try:
+            result = mcp.call(server_name, tool_name, arguments)
+        except JarvisError as exc:
+            print(f"Не получилось: {exc}", file=sys.stderr)
+            assistant.shutdown()
+            return 1
+        print(result[:4000])
+        assistant.shutdown()
+        return 0
+
+    if not any(server.enabled for server in mcp.servers()):
+        print()
+        print("Все серверы выключены: поставьте enabled = true тому, который нужен.")
+        assistant.shutdown()
+        return 0
+
+    print()
+    print("Подключаюсь и читаю список инструментов…")
+    tools = mcp.discover()
+    if not tools:
+        print("  инструментов не видно")
+        for name, reason in mcp.problems.items():
+            print(f"  {name}: {reason}")
+        assistant.shutdown()
+        return 1
+    grouped: dict[str, list] = {}
+    for tool in tools:
+        grouped.setdefault(tool.server, []).append(tool)
+    for name, items in grouped.items():
+        print(f"  {name}: инструментов {len(items)}")
+        for tool in items:
+            marks = []
+            if tool.required:
+                marks.append("нужны аргументы: " + ", ".join(tool.required))
+            if tool.destructive:
+                marks.append("меняет данные")
+            elif tool.read_only:
+                marks.append("только чтение")
+            tail = f" ({'; '.join(marks)})" if marks else ""
+            print(f"    - {tool.name}: {(tool.description or '').strip()[:100]}{tail}")
+    print()
+    print(f"Вызвать инструмент: jarvis mcp --call {tools[0].action_id}"
+          + (f" --arg {tools[0].required[0]}=значение" if tools[0].required else ""))
+    assistant.shutdown()
+    return 0
+
+
 def cmd_gui(args) -> int:
     """Открыть окно Jarvis (локальный интерфейс в отдельном окне браузера)."""
     from .webapp import open_ui
@@ -474,6 +584,7 @@ COMMANDS = {
     "migrate": cmd_migrate,
     "autonomy": cmd_autonomy,
     "llm": cmd_llm,
+    "mcp": cmd_mcp,
     "gui": cmd_gui,
 }
 

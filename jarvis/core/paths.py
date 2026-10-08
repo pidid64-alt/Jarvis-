@@ -72,6 +72,16 @@ def config_path() -> Path:
     return config_dir() / "config.toml"
 
 
+def mcp_config_path() -> Path:
+    """Настройки серверов MCP: отдельный файл, чтобы не мешать основному."""
+    return config_dir() / "mcp.toml"
+
+
+def bundled_mcp_example_path() -> Path:
+    """Шаблон mcp.toml внутри пакета (с подсказками)."""
+    return PROJECT_ROOT / "jarvis" / "config" / "mcp.example.toml"
+
+
 def env_file_path() -> Path:
     """Файл секретов. Содержимое никогда не печатается."""
     return config_dir() / ".env"
