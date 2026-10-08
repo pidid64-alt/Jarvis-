@@ -239,12 +239,26 @@ class MailChannel:
                  smtp_port: int = 465, imap_host: str = "imap.gmail.com", mailbox: str = "INBOX",
                  timeout: float = 30.0):
         self.login = (login or "").strip()
-        self.password = password or ""
+        self.password = self.normalize_app_password(password)
         self.smtp_host = smtp_host
         self.smtp_port = int(smtp_port)
         self.imap_host = imap_host
         self.mailbox = mailbox or "INBOX"
         self.timeout = timeout
+
+    @staticmethod
+    def normalize_app_password(password: str) -> str:
+        """Убирает пробелы из пароля приложения Google.
+
+        Google показывает пароль группами: «abcd efgh ijkl mnop». Пробелы нужны
+        только для чтения, при входе они лишние. Трогаем пароль, лишь если после
+        удаления пробелов получается ровно 16 знаков (такой длины бывает пароль
+        приложения) — любой другой пароль остаётся ровно как введён.
+        """
+        text = (password or "").strip()
+        if " " in text and len(text.replace(" ", "")) == 16:
+            return text.replace(" ", "")
+        return text
 
     def available(self) -> tuple[bool, str]:
         if not self.login or not self.password:

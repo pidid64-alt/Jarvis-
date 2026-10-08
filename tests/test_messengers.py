@@ -380,6 +380,13 @@ def letter(subject: str, text: str, sender: str = "Мама <mama@example.com>")
 
 
 class MailTests(IsolatedTestCase):
+    def test_app_password_spaces_are_ignored(self):
+        """Google показывает пароль приложения с пробелами — при входе они лишние."""
+        assert MailChannel.normalize_app_password("abcd efgh ijkl mnop") == "abcdefghijklmnop"
+        assert MailChannel.normalize_app_password("abcdefghijklmnop") == "abcdefghijklmnop"
+        # обычный пароль с пробелом внутри не трогаем
+        assert MailChannel.normalize_app_password("мой пароль 123") == "мой пароль 123"
+
     """Почта: подменяем imaplib/smtplib, сети нет."""
 
     def setUp(self):
