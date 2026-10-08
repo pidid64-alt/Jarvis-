@@ -104,6 +104,71 @@ class McpCommandTests(unittest.TestCase):
         self.assertNotIn("очень-секретный-токен", result.stdout + result.stderr)
 
 
+class MessengersCommandTests(unittest.TestCase):
+    """`jarvis messengers`: каналы, адресная книга и отправка — с подтверждением."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="jarvis-msg-")
+        self.home = Path(self._tmp.name)
+        (self.home / "config").mkdir(parents=True, exist_ok=True)
+        (self.home / "state").mkdir(parents=True, exist_ok=True)
+        self.addCleanup(self._tmp.cleanup)
+
+    def write_contacts(self) -> None:
+        (self.home / "config" / "contacts.toml").write_text(
+            '[[contact]]\nname = "Артём"\ntelegram = "12345"\n'
+            '\n[[contact]]\nname = "Мама"\nmail = "mama@example.com"\n',
+            encoding="utf-8",
+        )
+
+    def test_without_setup_it_explains_and_creates_the_file(self):
+        result = run_cli(self.home, "messengers")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Каналы", result.stdout)
+        self.assertIn("адресная книга", result.stdout)
+        self.assertTrue((self.home / "config" / "contacts.toml").exists())
+        self.assertNotIn("JARVIS_TELEGRAM_TOKEN=", result.stdout)
+
+    def test_contacts_are_listed(self):
+        self.write_contacts()
+        result = run_cli(self.home, "messengers")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Артём", result.stdout)
+        self.assertIn("telegram", result.stdout)
+        self.assertIn("Мама", result.stdout)
+        self.assertIn("mail", result.stdout)
+
+    def test_send_requires_both_recipient_and_text(self):
+        self.write_contacts()
+        result = run_cli(self.home, "messengers", "--to", "Артём")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("нужны оба ключа", result.stdout)
+
+    def test_send_is_cancelled_without_confirmation(self):
+        self.write_contacts()
+        result = run_cli(self.home, "messengers", "--channel", "telegram",
+                         "--to", "Артём", "--text", "привет", input_text="н\n")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Отменил", result.stdout)
+
+    def test_qr_hint_does_not_pair_anything(self):
+        result = run_cli(self.home, "messengers", "--qr")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Связанные устройства", result.stdout)
+        self.assertIn("wacli", result.stdout.lower())
+
+    def test_json_state_has_no_secrets(self):
+        self.write_contacts()
+        result = run_cli(self.home, "messengers", "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout[result.stdout.find("{"):result.stdout.rfind("}") + 1])
+        self.assertIn("state", payload)
+        self.assertIn("contacts", payload)
+        self.assertEqual([item["name"] for item in payload["contacts"]], ["Артём", "Мама"])
+        self.assertNotIn("token", json.dumps(payload, ensure_ascii=False).lower().replace(
+            "telegram_token", ""))
+
+
 class LlmCommandTests(unittest.TestCase):
     """`jarvis llm` показывает, что уходит модели; ключ в вывод не попадает."""
 

@@ -138,6 +138,45 @@ class MigrateTests(unittest.TestCase):
         self.assertGreaterEqual(len(rules), 5)
         self.assertTrue(all("check" in rule for rule in rules))
 
+    def test_messengers_section_survives_migration(self):
+        """Перенос не должен ломать почту и телеграм: раздел [messengers] цел."""
+        migrate.migrate()
+        config_text = paths.config_path().read_text(encoding="utf-8")
+        self.assertIn("[messengers]", config_text)
+        self.assertIn("JARVIS_TELEGRAM_TOKEN", config_text)
+        self.assertIn("JARVIS_GMAIL_PASSWORD", config_text)
+        settings = toml_edit.parse(config_text)["messengers"]
+        for key in ("enabled", "notify", "poll_seconds", "telegram_token", "gmail_user",
+                    "gmail_password", "whatsapp_command"):
+            self.assertIn(key, settings)
+        # Значений секретов в настройках нет — только пусто и ссылки на .env
+        self.assertEqual(settings["telegram_token"], "")
+        self.assertEqual(settings["gmail_password"], "")
+
+    def test_second_run_keeps_settings_of_the_new_version(self):
+        """Повторный перенос с --force не должен стирать уже сделанные настройки."""
+        migrate.migrate()
+        path = paths.config_path()
+        text = path.read_text(encoding="utf-8")
+        text = toml_edit.set_value(text, ("messengers", "enabled"), True)
+        text = toml_edit.set_value(text, ("messengers", "telegram_token"),
+                                   "${MY_OWN_TELEGRAM_TOKEN}")
+        text = toml_edit.set_value(text, ("messengers", "poll_seconds"), 15.0)
+        text = toml_edit.set_value(text, ("mcp", "enabled"), True)
+        path.write_text(text, encoding="utf-8")
+
+        report = migrate.migrate(force=True)
+        again = toml_edit.parse(path.read_text(encoding="utf-8"))
+        self.assertTrue(again["messengers"]["enabled"])
+        self.assertEqual(again["messengers"]["telegram_token"], "${MY_OWN_TELEGRAM_TOKEN}")
+        self.assertEqual(again["messengers"]["poll_seconds"], 15.0)
+        self.assertTrue(again["mcp"]["enabled"])
+        self.assertTrue(any("messengers" in note for note in report.notes))
+        # Прежние настройки тоже сохранены отдельной копией
+        copy = report.backup_dir / "config.toml"
+        self.assertTrue(copy.exists())
+        self.assertIn("MY_OWN_TELEGRAM_TOKEN", copy.read_text(encoding="utf-8"))
+
     def test_backup_keeps_old_files(self):
         report = migrate.migrate()
         for name in ("config.json", "commands.json", "autonomy.json"):

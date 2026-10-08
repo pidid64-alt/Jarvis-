@@ -75,6 +75,17 @@ def build_parser() -> argparse.ArgumentParser:
     llm.add_argument("--text", default="", help="фраза для примера (по умолчанию «привет»)")
     llm.add_argument("--send", action="store_true", help="действительно отправить и замерить время")
 
+    messengers = sub.add_parser("messengers", help="сообщения: каналы, входящие, отправка")
+    messengers.add_argument("--json", action="store_true", help="вывести состояние как JSON")
+    messengers.add_argument("--inbox", action="store_true", help="проверить новые входящие")
+    messengers.add_argument("--channel", default="telegram",
+                            help="канал для отправки: telegram, mail, whatsapp")
+    messengers.add_argument("--to", default="", help="кому: имя из адресной книги или адрес")
+    messengers.add_argument("--text", default="", help="текст сообщения")
+    messengers.add_argument("--yes", action="store_true", help="не спрашивать подтверждение")
+    messengers.add_argument("--qr", action="store_true", help="как связать WhatsApp по QR")
+    messengers.add_argument("--debug", action="store_true", help="подробный лог")
+
     mcp = sub.add_parser("mcp", help="серверы MCP: список, инструменты, проверка вызова")
     mcp.add_argument("--tools", action="store_true", help="показать инструменты серверов")
     mcp.add_argument("--json", action="store_true", help="вывести состояние как JSON")
@@ -551,6 +562,119 @@ def cmd_mcp(args) -> int:
     return 0
 
 
+def cmd_messengers(args) -> int:
+    """Сообщения: каналы, адресная книга, проверка входящих и пробная отправка.
+
+    Ничего не уходит без подтверждения: с ``--to`` и ``--text`` терминал
+    спрашивает «отправить?», а ``--yes`` нужен только для скриптов.
+    """
+    from ..core.messengers import ensure_contacts_file
+
+    contacts_file = ensure_contacts_file()
+    assistant = _assistant(args.debug)
+    service = assistant.messengers
+
+    if args.json:
+        from ..core.errors import JarvisError as _JarvisError
+
+        payload: dict = {"state": service.state(probe=True), "contacts": service.address_book.to_public()}
+        if args.inbox:
+            try:
+                found = service.check_new(limit=service.mail_limit)
+                payload["incoming"] = [message.to_dict() for message in found]
+            except _JarvisError as exc:
+                payload["incoming_error"] = str(exc)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        assistant.shutdown()
+        return 0
+
+    print("Сообщения")
+    print(f"  включены: {'да' if service.enabled else 'нет'}")
+    print(f"  файл настроек: {assistant.status()['config_path']}")
+    print(f"  адресная книга: {contacts_file}")
+    print()
+    print("Каналы (проверяю вход):")
+    channels_state = service.doctor()
+    for name, ok, reason in channels_state:
+        mark = "готов" if ok else "не готов"
+        print(f"  {name}: {mark} — {reason}")
+    if any(not ok for _name, ok, _reason in channels_state):
+        print("  Ключи задаются в окне Jarvis → «Настройки» → «Сообщения»")
+        print("  (или вручную: jarvis secret set JARVIS_TELEGRAM_TOKEN и ссылка в config.toml)")
+
+    contacts = service.address_book.load()
+    print()
+    if contacts:
+        print("Адресная книга:")
+        for contact in contacts:
+            channels = ", ".join(item for item in ("telegram", "mail", "whatsapp")
+                                 if contact.target(item))
+            print(f"  {contact.name} — {channels or 'нет адресов'}")
+    else:
+        print(f"Адресная книга пуста: {contacts_file}")
+        print("  добавьте записи [[contact]]: имя и адреса каналов")
+
+    if args.inbox:
+        print()
+        print("Проверяю входящие…")
+        from ..core.errors import JarvisError as _JarvisError
+
+        try:
+            found = service.check_new(limit=service.mail_limit)
+        except _JarvisError as exc:
+            print(f"  проверка не удалась: {exc}")
+            assistant.shutdown()
+            return 1
+        if not found:
+            print("  новых сообщений нет")
+        for message in found:
+            print(f"  [{message.channel}] {message.describe()[:200]}")
+
+    if args.qr:
+        whatsapp = service.channels.get("whatsapp")
+        print()
+        print("Что дальше:")
+        print(f"  {whatsapp.qr_hint()}")
+        print("  привязка идёт с телефона: WhatsApp → «Связанные устройства» → «Связать устройство»")
+
+    if args.to and args.text:
+        print()
+        try:
+            target, display, problem = service.resolve(args.channel, args.to)
+        except Exception as exc:  # noqa: BLE001 - показываем причину как есть
+            print(f"Не получилось: {exc}", file=sys.stderr)
+            assistant.shutdown()
+            return 1
+        if problem:
+            print(f"Не получилось: {problem}", file=sys.stderr)
+            assistant.shutdown()
+            return 1
+        print(f"Отправить в {args.channel} — {display}: «{args.text}»")
+        if not args.yes:
+            answer = input("Отправлять? (д/н) ").strip().lower()
+            if answer not in {"д", "да", "y", "yes"}:
+                print("Отменил, ничего не отправлено.")
+                assistant.shutdown()
+                return 1
+        try:
+            result = service.send(args.channel, args.to, args.text)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Не получилось: {exc}", file=sys.stderr)
+            assistant.shutdown()
+            return 1
+        print(f"Отправлено: {result.display}")
+    elif args.to or args.text:
+        print()
+        print("Для отправки нужны оба ключа: --to <кому> и --text <что>")
+    else:
+        print()
+        print("Проверить входящие: jarvis messengers --inbox")
+        print("Отправить: jarvis messengers --channel telegram --to Артём --text \"привет\"")
+
+    assistant.shutdown()
+    return 0
+
+
 def cmd_gui(args) -> int:
     """Открыть окно Jarvis (локальный интерфейс в отдельном окне браузера)."""
     from .webapp import open_ui
@@ -585,6 +709,7 @@ COMMANDS = {
     "autonomy": cmd_autonomy,
     "llm": cmd_llm,
     "mcp": cmd_mcp,
+    "messengers": cmd_messengers,
     "gui": cmd_gui,
 }
 

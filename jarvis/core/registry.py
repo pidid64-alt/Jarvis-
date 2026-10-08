@@ -26,6 +26,7 @@ ACTION_LIST_FIELDS = {
     "phrases": list,
     "tags": list,
     "platforms": list,
+    "model_args": list,
 }
 
 
@@ -60,6 +61,7 @@ def _action_from_dict(skill_id: str, data: dict[str, Any]) -> Action:
         capture=bool(data.get("capture", False)),
         capture_field=str(data.get("capture_field", "query")),
         autonomy_safe=bool(data.get("autonomy_safe", False)),
+        model_args=[str(item) for item in data.get("model_args", [])],
     )
 
 
@@ -100,6 +102,8 @@ class SkillRegistry:
         self._disabled: set[str] = set(disabled)
         self._skills: dict[str, Skill] = {}
         self._handlers: dict[str, Any] = {}
+        #: навыки, живущие в памяти (инструменты MCP): scan() их не смывает
+        self._memory_skills: dict[str, Skill] = {}
         self.journal = journal
         self.problems: list[str] = []
 
@@ -107,6 +111,9 @@ class SkillRegistry:
     def scan(self) -> list[Skill]:
         """Перечитывает навыки из встроенной и пользовательской папок."""
         self._skills.clear()
+        self._handlers = {key: value for key, value in self._handlers.items()
+                          if key in self._memory_skills}
+        self._skills.update(self._memory_skills)
         self.problems.clear()
         for folder, builtin in ((paths.bundled_skills_dir(), True), (paths.user_skills_dir(), False)):
             if not folder.is_dir():
@@ -154,6 +161,7 @@ class SkillRegistry:
         action = skill.action(action_id)
         return (skill, action) if action else None
 
+    #: навыки, живущие в памяти (инструменты MCP): их не должно смывать scan()
     def add_skill(self, skill: Skill, handler: Any = None) -> None:
         """Регистрирует навык, живущий в памяти (например, инструменты MCP).
 
@@ -163,12 +171,15 @@ class SkillRegistry:
         """
         for action in skill.actions:
             self.policy.mark_dangerous(action)
+        skill.enabled = skill.id not in self._disabled
+        self._memory_skills[skill.id] = skill
         self._skills[skill.id] = skill
         if handler is not None:
             self._handlers[skill.id] = handler
 
     def remove_skill(self, skill_id: str) -> None:
         """Убирает навык, живущий в памяти."""
+        self._memory_skills.pop(skill_id, None)
         self._skills.pop(skill_id, None)
         self._handlers.pop(skill_id, None)
 

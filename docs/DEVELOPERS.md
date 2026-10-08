@@ -237,6 +237,7 @@ macOS, `gsettings`/`GTK_THEME` на Linux), `resolve()` (превращает `s
 | Piper (`rhasspy/piper`) | MIT | синтез речи |
 | whisper.cpp (`ggerganov/whisper.cpp`) | MIT | распознавание речи |
 | openWakeWord (`dscripka/openWakeWord`) | Apache-2.0 | слово-активатор |
+| wacli (`openclaw/wacli`) | MIT | WhatsApp: отдельная программа, Jarvis вызывает её и читает JSON |
 | Браузер пользователя (Edge, Chrome, Chromium, Brave, Vivaldi) | собственная лицензия, уже стоит в системе | показывает окно; Jarvis только передаёт ему адрес |
 | Pillow | HPND | только инструменты документации, приложению не нужен |
 | Segoe UI Variable, Segoe UI, Consolas, Cascadia Mono | Microsoft, входят в Windows | шрифты интерфейса в Windows |
@@ -258,6 +259,20 @@ python tools/contrast_check.py       # контраст палитр
 python tools/measure_memory.py       # память (по желанию)
 python -m compileall -q jarvis tools tests
 ```
+
+### Сообщения
+
+Каналы — `jarvis/providers/messengers.py` (Telegram Bot API, IMAP/SMTP через
+стандартную библиотеку, вызовы wacli), логика и адресная книга —
+`jarvis/core/messengers.py`, фразы и подтверждение — `jarvis/skills/messengers/`.
+Демон раз в `messengers.poll_seconds` вызывает `Assistant.check_messages()`,
+который опрашивает каналы и уведомляет о новом; состояние («до какого
+обновления дочитали») лежит в `state/messengers.json`.
+
+Новый канал: класс с методами `available()`, `send(recipient, text)`,
+`poll(...)`, `state(probe=False)` и регистрация в `Channels`. Правило проекта —
+получатель и текст обязательны, подтверждение перед отправкой, при неясности
+вопрос, а не догадка. Подробности — `docs/MESSENGERS.md`.
 
 ### MCP-серверы
 

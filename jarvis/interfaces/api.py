@@ -412,6 +412,30 @@ class LocalApi:
             ],
         }
 
+    def _link_env(self, dotted: str, name: str) -> None:
+        """Ставит в настройках ссылку ``${ИМЯ}`` на только что сохранённый секрет.
+
+        Значение ключа в файл настроек не попадает никогда — только имя
+        переменной. Если человек уже указал свою ссылку, её не трогаем.
+        """
+        from ..core import toml_edit
+
+        reference = "${" + name + "}"
+        path = paths.config_path()
+        text = path.read_text(encoding="utf-8") if path.exists() else \
+            paths.bundled_config_path().read_text(encoding="utf-8")
+        current = str(self.config.raw(dotted) or "")
+        if current and current != reference:
+            log.info("в настройках уже есть ссылка для %s — оставляю как есть", dotted)
+            return
+        try:
+            updated = toml_edit.set_value(text, dotted, reference)
+        except toml_edit.TomlEditError as exc:
+            raise ApiError(400, "bad_value", str(exc)) from exc
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(updated, encoding="utf-8")
+        self.assistant.journal.info("ui", f"в настройках появилась ссылка ${{{name}}}")
+
     def _set_config(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Меняет один ключ config.toml, сохраняя комментарии и порядок."""
         from ..core import secrets, toml_edit
@@ -454,12 +478,15 @@ class LocalApi:
 
         name = str(payload.get("name", "")).strip().upper()
         value = str(payload.get("value", "")).strip()
+        key = str(payload.get("key", "")).strip()
         if not name or not name.replace("_", "").isalnum():
             raise ApiError(400, "bad_name",
                            "имя переменной — латинские буквы, цифры и подчёркивания")
         if not value:
             raise ApiError(400, "empty_value", "пустое значение не сохраняю")
         secrets.save_env_var(name, value, paths.env_file_path())
+        if key:
+            self._link_env(key, name)
         self.assistant.refresh(reload_config=True)
         self.assistant.journal.info("ui", f"секрет {name} сохранён в .env")
         self.assistant.events.publish("secret_saved", name=name)

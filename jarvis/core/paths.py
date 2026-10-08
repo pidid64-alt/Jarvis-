@@ -77,6 +77,16 @@ def mcp_config_path() -> Path:
     return config_dir() / "mcp.toml"
 
 
+def contacts_path() -> Path:
+    """Адресная книга: кому Jarvis может писать (телеграм, почта, ватсап)."""
+    return config_dir() / "contacts.toml"
+
+
+def bundled_contacts_example_path() -> Path:
+    """Шаблон contacts.toml внутри пакета."""
+    return PROJECT_ROOT / "jarvis" / "config" / "contacts.example.toml"
+
+
 def bundled_mcp_example_path() -> Path:
     """Шаблон mcp.toml внутри пакета (с подсказками)."""
     return PROJECT_ROOT / "jarvis" / "config" / "mcp.example.toml"

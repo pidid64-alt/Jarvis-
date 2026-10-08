@@ -129,8 +129,12 @@ def find_exact(
     опасные действия игнорирует полностью.
     """
     normalized = strip_fillers(text)
-    if not normalized or has_negation(normalized):
+    if not normalized:
         return []
+    # «не» в самой команде запрещает выполнение, но «не» внутри текста сообщения —
+    # это уже данные: «отправь Маме: не забудь про хлеб». Поэтому сначала ищем
+    # совпадения, а решение об отрицании принимаем ниже, зная границы фраз.
+    negated = has_negation(normalized)
 
     candidates: list[tuple[int, int, int, Skill, Action, str]] = []
     for skill, action in _iter_actions(skills):
@@ -140,6 +144,14 @@ def find_exact(
             for phrase_norm in phrase_forms(phrase):
                 for start, end in phrase_spans(normalized, phrase_norm):
                     candidates.append((start, end, len(phrase_norm), skill, action, phrase))
+    if negated:
+        # оставляем только фразы-захвата, у которых каждое отрицание стоит ПОСЛЕ
+        # фразы, то есть внутри того, что мы примем как аргумент («текст письма»).
+        # Смещения здесь символьные — phrase_spans отдаёт символы, не слова.
+        pattern = r"(?<!\w)(?:" + "|".join(re.escape(word) for word in NEGATIONS) + r")(?!\w)"
+        negation_positions = [match.start() for match in re.finditer(pattern, normalized)]
+        candidates = [item for item in candidates
+                      if item[4].capture and all(pos >= item[1] for pos in negation_positions)]
     if not candidates:
         return []
 
@@ -161,6 +173,18 @@ def find_exact(
 
     if not chosen:
         return []
+
+    # «отправь в телеграм Артёму: привет» — всё после фразы-захвата это текст
+    # сообщения, поэтому совпавшие там слова не считаем отдельными командами
+    # (иначе «привет» уводило бы фразу в приветствие). Подтверждение всё равно
+    # показывает, что именно уйдёт, а опасные совпадения не отбрасываем.
+    captures = [item for item in chosen if item[3].capture]
+    if len(chosen) > 1 and len(captures) == 1:
+        head = captures[0]
+        tail = [item for item in chosen if item is not head and item[0] >= head[1]
+                and not (item[3].is_dangerous or item[3].confirm)]
+        if head[0] == min(item[0] for item in chosen) and len(tail) == len(chosen) - 1:
+            chosen = [head]
 
     words_total = len(normalized.split())
     matched_words = sum(len(normalized[start:end].split()) for start, end, _, _, _ in chosen)

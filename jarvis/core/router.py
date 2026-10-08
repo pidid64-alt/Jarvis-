@@ -184,8 +184,10 @@ class Router:
                 self.journal.warning("core.router", f"LLM недоступен: {exc}")
             return None
         valid = self.registry.flat_action_ids()
+        model_args = {f"{skill.id}.{action.id}": list(action.model_args)
+                      for skill in skills for action in skill.actions if action.model_args}
         try:
-            return parse_actions(raw, valid)
+            return parse_actions(raw, valid, model_args)
         except JarvisError as exc:
             log.warning("ответ модели не разобран: %s", exc)
             if self.journal:
@@ -206,9 +208,9 @@ class Router:
                 action = type(action)(**{**action.__dict__, "confirm": True})
             intent = Intent(action=action, skill=skill, score=1.0, source="llm")
             if item.arguments:
-                # аргументы инструмента MCP: короткие значения, которые видно
-                # в вопросе подтверждения
-                intent.args["mcp_arguments"] = item.arguments
+                # аргументы от модели: короткие значения, которые видно в вопросе
+                # подтверждения (инструменты MCP, отправка сообщений)
+                intent.args["model_arguments"] = item.arguments
             intents.append(intent)
         return intents
 

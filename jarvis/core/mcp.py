@@ -511,7 +511,7 @@ class McpRegistry:
         tool = self._find_tool(wanted)
         if tool is None:
             return fail(ctx, "skill.mcp.unknown_tool", name=wanted)
-        intent.args["mcp_arguments"] = arguments
+        intent.args["model_arguments"] = arguments
         return self.run_tool(tool, ctx, intent, args_from_user=True)
 
     def _find_tool(self, wanted: str) -> McpTool | None:
@@ -533,7 +533,8 @@ class McpRegistry:
         """
         from ..skills import fail
 
-        arguments = dict(intent.args.get("mcp_arguments") or {})
+        arguments = dict(intent.args.get("model_arguments")
+                         or intent.args.get("mcp_arguments") or {})
         missing = [key for key in tool.required if key not in arguments]
         if missing:
             return fail(ctx, "skill.mcp.need_args", tool=tool.name, server=tool.server,
@@ -610,23 +611,34 @@ def attach(registry: Any, mcp: McpRegistry, *, timeout: float | None = None) -> 
     return True
 
 
-def validate_args(arguments: Any) -> dict[str, Any]:
+def validate_args(arguments: Any, *, only: list[str] | None = None,
+                  nested: tuple[str, ...] = ()) -> dict[str, Any]:
     """Оставляет только простые значения: инструментам не нужны сложные структуры.
 
     Заодно это защита: модель не сможет передать инструменту вложенный объект или
     длинную строку с чем угодно — только короткие значения, видимые в вопросе.
+    ``only`` — какие имена разрешены, ``nested`` — какие ключи могут содержать
+    маленький словарь (у инструментов MCP — ``arguments``).
     """
     if not isinstance(arguments, dict):
         return {}
     allowed: dict[str, Any] = {}
+    permitted = set(only) if only else None
     for key, value in list(arguments.items())[:8]:
         name = str(key)[:60]
+        if permitted is not None and name not in permitted:
+            continue
         if isinstance(value, bool) or isinstance(value, (int, float)):
             allowed[name] = value
         elif isinstance(value, str):
             allowed[name] = value[:400]
         elif isinstance(value, list):
             allowed[name] = [str(item)[:120] for item in value[:8]]
+        elif isinstance(value, dict) and name in nested:
+            allowed[name] = {str(inner_key)[:60]:
+                             (inner_value[:400] if isinstance(inner_value, str) else inner_value)
+                             for inner_key, inner_value in list(value.items())[:8]
+                             if isinstance(inner_value, (str, int, float, bool))}
     return allowed
 
 

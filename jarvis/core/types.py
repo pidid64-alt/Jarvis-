@@ -104,6 +104,9 @@ class Action:
     capture_field: str = "query"
     #: действие разрешено запускать автономным проверкам (без пользователя)
     autonomy_safe: bool = False
+    #: имена аргументов, которые модель может передать этому действию
+    #: (например, получатель и текст сообщения). Пусто — модель аргументов не даёт.
+    model_args: list[str] = field(default_factory=list)
     danger: bool = False  # вычисляется политикой прав
 
     @property

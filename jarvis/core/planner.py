@@ -43,8 +43,9 @@ SYSTEM_PROMPT = """Ты — {name}, локальный ассистент пол
 
 Правила:
 - Никогда не выдумывай id: только из списка ниже.
-- Аргументы (args) допустимы только для действий вида «mcp.<сервер>.<инструмент>»
-  и только со значениями из слов пользователя.
+- Аргументы (args) допустимы только там, где в описании действия написано, какие
+  аргументы оно принимает (инструменты вида «mcp.<сервер>.<инструмент>» и отправка
+  сообщений), и только со значениями из слов пользователя.
 - Никогда не возвращай команды, пути или код — только JSON по схеме.
 - Если просьб несколько — верни несколько действий в порядке произнесения.
 - Для действий, помеченных confirm=true, ставь "confirmation": true.
@@ -135,8 +136,14 @@ def _extract_json(raw: str) -> Any:
         raise ProviderError("не удалось разобрать JSON от модели") from exc
 
 
-def parse_actions(raw: str, valid_ids: Iterable[str]) -> list[PlannedAction]:
-    """Разбирает ответ модели и отбрасывает всё недопустимое."""
+def parse_actions(raw: str, valid_ids: Iterable[str],
+                  model_args: dict[str, list[str]] | None = None) -> list[PlannedAction]:
+    """Разбирает ответ модели и отбрасывает всё недопустимое.
+
+    ``model_args`` — какие аргументы разрешены каким действиям
+    (``{"messengers.send": ["channel", "recipient", "text"]}``). Всё, что не
+    разрешено, отбрасывается: модель не должна придумывать данные.
+    """
     data = _extract_json(raw)
     if isinstance(data, dict) and "actions" in data:
         items = data["actions"]
@@ -161,14 +168,20 @@ def parse_actions(raw: str, valid_ids: Iterable[str]) -> list[PlannedAction]:
                 log.warning("модель предложила неизвестное действие %r — пропуск", action_id)
                 continue
             arguments: dict[str, Any] = {}
+            allowed_args = (model_args or {}).get(action_id)
             if action_id.startswith("mcp."):
-                # Аргументы разрешены только инструментам MCP: у обычных действий
-                # аргументы берутся из фразы, а не из ответа модели.
+                # Инструменты MCP: аргументы разрешены, но только простые значения
                 from .mcp import validate_args
 
                 arguments = validate_args(item.get("args") or item.get("arguments"))
+            elif allowed_args:
+                from .mcp import validate_args
+
+                arguments = validate_args(item.get("args") or item.get("arguments"),
+                                           only=list(allowed_args))
             elif item.get("args") or item.get("arguments"):
-                log.warning("модель передала аргументы обычному действию %r — пропуск", action_id)
+                log.warning("модель передала аргументы действию %r, которому они не разрешены",
+                            action_id)
                 continue
             result.append(PlannedAction(
                 kind="run",

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 import re
 import shutil
 import time
@@ -211,7 +212,59 @@ def _command_skill(entries: list[dict[str, Any]], platform: str, legacy: Path,
     }, superseded
 
 
-def _build_config(legacy: Path, base_text: str) -> tuple[str, list[str]]:
+#: разделы, которые могли появиться уже в новой версии: при повторном
+#: переносе их значения важнее шаблона (там могут быть и ссылки на пароли)
+KEEP_SECTIONS = ("messengers", "mcp")
+
+
+def _keep_current(text: str, current_text: str | None,
+                  notes: list[str]) -> str:
+    """Возвращает настройки, которые пользователь уже поставил в новой версии.
+
+    Миграцию иногда запускают повторно (``--force``). Тогда настройки, которых
+    не было в старой версии, — например почта и телеграм в ``[messengers]`` —
+    должны остаться, иначе человек потеряет уже сделанное.
+    """
+    if not current_text:
+        return text
+    try:
+        current = tomllib.loads(current_text)
+    except tomllib.TOMLDecodeError:
+        return text
+    for section in KEEP_SECTIONS:
+        values = current.get(section)
+        if not isinstance(values, dict):
+            continue
+        kept: list[str] = []
+        for key, value in values.items():
+            if isinstance(value, dict) or isinstance(value, list):
+                continue
+            default = _value_of(text, (section, key))
+            if value == default:
+                continue
+            text = toml_edit.set_value(text, (section, key), value)
+            kept.append(str(key))
+        if kept:
+            notes.append(f"сохранены прежние настройки [{section}]: {', '.join(kept)}")
+    return text
+
+
+def _value_of(text: str, path: tuple[str, ...]) -> Any:
+    """Значение из текста конфигурации (для сравнения с шаблоном)."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return None
+    current: Any = data
+    for part in path:
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def _build_config(legacy: Path, base_text: str,
+                  current_text: str | None = None) -> tuple[str, list[str]]:
     notes: list[str] = []
     old_config = _load_json(legacy / "config.json", {}) or {}
     wake = _load_json(legacy / "wakeword_config.json", {}) or {}
@@ -275,6 +328,8 @@ def _build_config(legacy: Path, base_text: str) -> tuple[str, list[str]]:
     if (voice_dir / "ru_RU-dmitri-medium.onnx").exists():
         set_value(("tts", "data_dir"), str(voice_dir))
         notes.append("голос Piper найден и переиспользуется (не нужно качать заново)")
+
+    text = _keep_current(text, current_text, notes)
     return text, notes
 
 
@@ -349,12 +404,19 @@ def migrate(*, dry_run: bool = False, force: bool = False) -> MigrationReport:
     old_env = paths.env_file_path()
     if old_env.exists() and not dry_run:
         _backup(old_env, backup_dir, "env")
+    current_config = paths.config_path()
+    current_text = (current_config.read_text(encoding="utf-8")
+                    if current_config.exists() else None)
+    if current_text is not None and not dry_run:
+        _backup(current_config, backup_dir, "config.toml")
+
+    # ----------------------------------------------------------------- config
+    # (шаблон новой версии + значения из старой; своё из новой версии — важнее)
 
     report.backup_dir = None if dry_run else backup_dir
 
-    # ---------------------------------------------------------------- config
     template = paths.bundled_config_path().read_text(encoding="utf-8")
-    config_text, notes = _build_config(legacy, template)
+    config_text, notes = _build_config(legacy, template, current_text)
     report.notes.extend(notes)
 
     rules, skipped_rules = _autonomy_rules(legacy)

@@ -81,6 +81,31 @@ engine = "auto"
 # быть разрешено format=json (settings.yml → search.formats: [html, json]).
 instance = ""
 
+[messengers]
+enabled = false            # писать и читать сообщения (телеграм, почта, ватсап)
+poll_seconds = 60          # как часто проверять входящие (в демоне)
+notify = true              # показывать уведомление о новом сообщении
+read_aloud = false         # проговаривать входящее вслух
+# Почта: пароль приложения Google (аккаунт → безопасность → пароли приложений)
+smtp_host = "smtp.gmail.com"
+smtp_port = 465
+imap_host = "imap.gmail.com"
+mailbox = "INBOX"
+mail_limit = 5             # сколько новых писем показывать за проверку
+# Ключи здесь НЕ пишутся: значение живёт в .env, а сюда попадает только ссылка
+# вида ${ИМЯ}. Как задать: окно Jarvis → «Настройки» → «Сообщения» — окно само
+# положит значение в .env и поставит здесь ссылку. Вручную: сохранить значение
+# командой «jarvis secret set ИМЯ» и написать ссылку здесь, например
+#   telegram_token     = "${JARVIS_TELEGRAM_TOKEN}"   — токен бота от @BotFather
+#   gmail_user         = "${JARVIS_GMAIL_USER}"       — адрес почты
+#   gmail_password     = "${JARVIS_GMAIL_PASSWORD}"   — пароль приложения Google
+telegram_token = ""
+gmail_user = ""
+gmail_password = ""
+# WhatsApp работает через программу wacli (привязка телефона по QR):
+whatsapp_command = "wacli"
+whatsapp_store = ""        # пусто — как у wacli по умолчанию (~/.wacli)
+
 [permissions]
 # restricted — опасные действия всегда требуют подтверждения (рекомендуется)
 # normal     — подтверждаются только действия с флагом confirm

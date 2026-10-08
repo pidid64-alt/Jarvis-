@@ -22,6 +22,7 @@ from .history import ConversationState, DialogLog
 from .i18n import get_translator
 from .journal import Journal
 from .logging_setup import get_logger, setup_logging
+from .messengers import MessengerService
 from .permissions import PermissionPolicy
 from .planner import PlannedAction
 from .registry import SkillRegistry
@@ -37,7 +38,7 @@ class Assistant:
     def __init__(self, config: Any, *, providers: Any = None, journal: Journal | None = None,
                  events: EventBus | None = None, dialog: DialogLog | None = None,
                  conversation: ConversationState | None = None, policy: PermissionPolicy | None = None,
-                 mcp: Any = None):
+                 mcp: Any = None, messengers: Any = None):
         self.config = config
         self.journal = journal or Journal()
         self.events = events or EventBus()
@@ -57,6 +58,8 @@ class Assistant:
         from .mcp import McpRegistry
 
         self.mcp = mcp if mcp is not None else McpRegistry(config, self.journal)
+        self.messengers = (messengers if messengers is not None
+                           else MessengerService(config, self.journal))
         self.router = Router(self.registry, self.providers, config, journal=self.journal, mcp=self.mcp)
         self.executor = Executor(config, self.policy, self.registry, self.journal)
         self._state = State.IDLE
@@ -197,7 +200,7 @@ class Assistant:
             source=source,
             confirm_callback=confirm_callback,
             say_callback=say_callback,
-            extra={"skill_id": skill_id},
+            extra={"skill_id": skill_id, "messengers": self.messengers},
         )
 
     def _skill_permissions(self, skill_id: str):
@@ -329,6 +332,7 @@ class Assistant:
             },
             "providers": self.providers.state(),
             "mcp": self.mcp.status(),
+            "messengers": self.messengers.state(),
             "config_path": str(paths.config_path()),
             "state_dir": str(paths.state_dir()),
             "voice_enabled": self.providers.voice_enabled,
@@ -353,10 +357,33 @@ class Assistant:
             self.mcp.close()
 
     def maintain(self) -> None:
-        """Периодическая уборка: гасим всё, чем давно не пользовались."""
+        """Периодическая уборка: гасим всё, чем давно не пользовались.
+
+        Заодно раз в ``messengers.poll_seconds`` проверяем входящие сообщения и
+        уведомляем о них — это и есть «читать уведомления» из договорённости.
+        """
         self.providers.maintain()
         if getattr(self, "mcp", None) is not None:
             self.mcp.stop_if_idle()
+        self.check_messages()
+
+    def check_messages(self) -> list[Any]:
+        """Проверяет входящие (не чаще, чем разрешено настройками)."""
+        if getattr(self, "messengers", None) is None:
+            return []
+        try:
+            found = self.messengers.check_new_if_due()
+        except Exception as exc:  # noqa: BLE001 - фон не должен падать
+            log.warning("проверка сообщений не удалась: %s", exc)
+            return []
+        for message in found:
+            text = message.describe()
+            self.journal.info("core.messengers", f"входящее ({message.channel}): {text[:200]}")
+            if self.messengers.notify:
+                self.providers.notify(self.t("messengers.title"), text[:300])
+            if self.messengers.read_aloud and self.providers.voice_enabled:
+                self.providers.speak(text[:300], language=self._language)
+        return found
 
 
 def create_assistant(config: Any = None, *, debug: bool = False, **kwargs: Any) -> Assistant:

@@ -122,6 +122,8 @@ async function main() {
   const toggles = rows("#skills .switch");
   check("переключатели навыков есть", toggles.length > 5, `переключателей: ${toggles.length}`);
   check("карточка серверов MCP на месте", textOf("mcp-list").length > 0, textOf("mcp-list").slice(0, 60));
+  check("карточка сообщений на месте", textOf("messengers-list").length > 0,
+        textOf("messengers-list").slice(0, 80));
   check("примеры фраз показаны", rows("#skills .skill-examples").length > 5,
         `строк с примерами: ${rows("#skills .skill-examples").length}`);
   check("переключатель сообщает состояние", toggles.every((node) => ["true", "false"].includes(node.getAttribute("aria-checked"))));

@@ -482,6 +482,37 @@ if (typeof document !== "undefined") {
     }
   }
 
+  /** Сообщения: каналы, адресная книга и кнопка проверки входящих. */
+  function renderMessengers(messengers) {
+    const box = el("messengers-list");
+    if (!box) return;
+    const data = messengers || {};
+    const channels = data.channels || {};
+    box.textContent = "";
+    if (!data.enabled) {
+      const line = document.createElement("p");
+      line.className = "mcp-line";
+      line.textContent = t("messengers.off");
+      box.appendChild(line);
+    }
+    for (const name of Object.keys(channels)) {
+      const channel = channels[name] || {};
+      const line = document.createElement("p");
+      line.className = "mcp-line";
+      const state = channel.available ? t("messengers.ready") : t("messengers.not_ready");
+      line.textContent = `${t(`channel.${name}`)} · ${state} — ${channel.reason || ""}`.trim();
+      if (channel.reason) line.title = channel.reason;
+      box.appendChild(line);
+    }
+    const contacts = data.contacts || [];
+    const line = document.createElement("p");
+    line.className = "mcp-line";
+    line.textContent = contacts.length
+      ? t("messengers.contacts", { names: contacts.map((item) => item.name).join(", ") })
+      : t("messengers.no_contacts");
+    box.appendChild(line);
+  }
+
   function renderSkills() {
     const box = el("skills");
     box.textContent = "";
@@ -572,13 +603,32 @@ if (typeof document !== "undefined") {
         { key: "llm.enabled", label: "Пользоваться моделью", kind: "bool" },
         { key: "llm.timeout_seconds", label: "Ожидание ответа модели, с", kind: "number",
           note: "локальной модели нужно 30–120 с" },
-        { key: "llm.api_key", label: "Ключ модели", kind: "secret" },
+        { key: "llm.api_key", label: "Ключ модели", kind: "secret",
+          env: "JARVIS_LLM_KEY" },
         { key: "search.engine", label: "Поисковый сервис", kind: "choice",
           options: ["auto", "duckduckgo", "searx"],
           labels: { auto: "как ниже", duckduckgo: "DuckDuckGo", searx: "свой SearxNG" },
           note: "DuckDuckGo в некоторых сетях недоступен — тогда укажите свой поисковик" },
         { key: "search.instance", label: "Адрес своего поисковика", kind: "text",
           note: "SearxNG с включённым format=json, например http://localhost:8888" },
+      ],
+    },
+    {
+      title: "Сообщения",
+      rows: [
+        { key: "messengers.enabled", label: "Разрешить сообщения", kind: "bool",
+          note: "телеграм, почта и ватсап — отправка и проверка входящих" },
+        { key: "messengers.notify", label: "Уведомлять о входящих", kind: "bool" },
+        { key: "messengers.poll_seconds", label: "Проверять входящие, с", kind: "number",
+          note: "как часто опрашивать в фоне" },
+        { key: "messengers.telegram_token", label: "Токен бота Telegram", kind: "secret",
+          env: "JARVIS_TELEGRAM_TOKEN",
+          note: "сохранится в .env как JARVIS_TELEGRAM_TOKEN (токен от @BotFather)" },
+        { key: "messengers.gmail_user", label: "Адрес почты", kind: "secret",
+          env: "JARVIS_GMAIL_USER", note: "сохранится в .env как JARVIS_GMAIL_USER" },
+        { key: "messengers.gmail_password", label: "Пароль приложения Google", kind: "secret",
+          env: "JARVIS_GMAIL_PASSWORD",
+          note: "не обычный пароль: включите 2FA и создайте пароль приложения" },
       ],
     },
     {
@@ -652,8 +702,9 @@ if (typeof document !== "undefined") {
   function buildControl(row, tree, languages, control, label) {
     const secret = row.kind === "secret";
     const value = secret ? "" : dig(tree, row.key);
-    // имя ключа берём из ссылки в настройках: ${JARVIS_LLM_KEY} -> JARVIS_LLM_KEY
-    const name = secret ? secretName(dig(tree, row.key), "JARVIS_LLM_KEY") : "";
+    // имя ключа берём из ссылки в настройках: ${JARVIS_LLM_KEY} -> JARVIS_LLM_KEY,
+    // а если значение ещё пустое — из подсказки строки (row.env)
+    const name = secret ? secretName(dig(tree, row.key), row.env || "JARVIS_LLM_KEY") : "";
     const envEntry = ((state.config.env || {}).names || []).find((item) => item.name === name) || {};
 
     if (row.kind === "bool") {
@@ -746,8 +797,9 @@ if (typeof document !== "undefined") {
       button.addEventListener("click", async () => {
         const secretValue = input.value.trim();
         if (!secretValue) return toast(t("settings.key_empty"), "error");
+        if (!name) return toast(t("settings.key_none"), "error");
         try {
-          const result = await Api.post("/secret", { name, value: secretValue });
+          const result = await Api.post("/secret", { name, value: secretValue, key: row.key });
           input.value = "";
           input.placeholder = t("settings.key_set", { masked: result.masked || "…" });
           toast(t("settings.key_saved", { masked: result.masked || "…" }));
@@ -889,10 +941,13 @@ if (typeof document !== "undefined") {
     licenses.className = "section";
     licenses.innerHTML = `<div class="section-title">Использованные проекты и лицензии</div>
       <p class="muted">Piper (MIT) — синтез речи · whisper.cpp (MIT) — распознавание ·
-      openWakeWord (Apache-2.0) — слово-активатор. Окно показывает браузер, который уже
-      стоит в системе; страница Jarvis написана здесь и сторонних библиотек не использует.
-      Шрифты: Segoe UI (Windows), Noto Sans и DejaVu Sans (SIL OFL / свободная лицензия).
-      Значки интерфейса нарисованы в этом проекте.</p>`;
+      openWakeWord (Apache-2.0) — слово-активатор · wacli (MIT,
+      <a href="https://github.com/openclaw/wacli" target="_blank" rel="noopener">openclaw/wacli</a>)
+      — WhatsApp по QR-коду: отдельная программа, Jarvis только вызывает её.
+      Сообщения в Telegram и почту Jarvis отправляет сам, через стандартную библиотеку Python.
+      Окно показывает браузер, который уже стоит в системе; страница Jarvis написана здесь и
+      сторонних библиотек не использует. Шрифты: Segoe UI (Windows), Noto Sans и DejaVu Sans
+      (SIL OFL / свободная лицензия). Значки интерфейса нарисованы в этом проекте.</p>`;
     card.appendChild(licenses);
 
     const actions = document.createElement("div");
@@ -1010,6 +1065,7 @@ if (typeof document !== "undefined") {
       state.status = status;
       updateVoiceHint(status);
       renderMcp(status.mcp);
+      renderMessengers(status.messengers);
     } catch (error) {
       el("conn").textContent = "ядро не отвечает";
       document.body.dataset.connected = "false";
@@ -1074,6 +1130,15 @@ if (typeof document !== "undefined") {
     el("modal-yes").addEventListener("click", () => closeModal(true));
     el("save").addEventListener("click", () => saveSettings());
     el("skills-refresh").addEventListener("click", () => loadSkills());
+    // кнопка «Проверить входящие» просто отправляет обычную фразу в чат:
+    // отдельного пути через API нет — всё идёт тем же маршрутом, что и голос
+    const checkMessages = el("messengers-check");
+    if (checkMessages) {
+      checkMessages.addEventListener("click", () => {
+        showView("chat");
+        send("что нового в сообщениях");
+      });
+    }
     el("log-refresh").addEventListener("click", () => loadJournal());
     el("log-copy").addEventListener("click", () => copyReport());
     el("log-search").addEventListener("input", () => {
