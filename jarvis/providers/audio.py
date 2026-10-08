@@ -7,6 +7,7 @@ Linux (parecord/pw-record) и Windows (sounddevice) выглядят одина�
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import wave
 from pathlib import Path
@@ -44,10 +45,19 @@ class Recorder:
         platform = get_platform()
         if platform.name == "windows":
             try:
-                import sounddevice  # noqa: F401
+                import sounddevice as sd
             except ImportError:
                 return False, "не установлен пакет sounddevice (запись микрофона)"
-            return True, "готов"
+            # Одного наличия пакета мало: если микрофона нет или Windows его не
+            # пускает, запись падала непонятной ошибкой уже во время разговора.
+            try:
+                devices = [item for item in sd.query_devices()
+                           if int(item.get("max_input_channels", 0)) > 0]
+            except Exception as exc:  # noqa: BLE001 - звуковая система бывает занята
+                return False, f"звуковая система недоступна: {exc}"
+            if not devices:
+                return False, "Windows не видит ни одного микрофона"
+            return True, f"готов ({devices[0].get('name', 'микрофон')})"
         import shutil
 
         for name in ("parecord", "pw-record", "arecord"):
@@ -56,6 +66,23 @@ class Recorder:
         return False, "нет программы записи звука (parecord/pw-record/arecord)"
 
     # ---------------------------------------------------------------- recording
+    @contextlib.contextmanager
+    def _open_mic(self, sample_rate: int):
+        """Открывает поток микрофона и объясняет сбой человеческими словами.
+
+        PortAudio на Windows отвечает своими ошибками (``PortAudioError``,
+        «No Default Input Device»), и раньше такая ошибка доходила до окна как
+        «внутренняя ошибка» без причины.
+        """
+        try:
+            with get_platform().mic_stream(sample_rate) as stream:
+                yield stream
+        except ProviderError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - звуковая система чужая территория
+            raise ProviderError(f"{exc} — проверьте, что микрофон подключён и разрешён "
+                                f"в настройках звука") from exc
+
     def record(self, path: Path | None = None) -> Path | None:
         """Записывает фразу. ``None`` — речи не было."""
         target = Path(path) if path else paths.state_dir() / "command.wav"
@@ -64,9 +91,8 @@ class Recorder:
         if not ready:
             raise ProviderError(reason)
 
-        platform = get_platform()
         if self.beep:
-            platform.beep()
+            get_platform().beep()
 
         vad = self._load_vad()
         frame_bytes = int(self.sample_rate * FRAME_MS / 1000) * 2
@@ -81,7 +107,7 @@ class Recorder:
         waited_ms = 0
         finished = False
 
-        with platform.mic_stream(self.sample_rate) as stream:
+        with self._open_mic(self.sample_rate) as stream:
             while total_ms < self.max_record_seconds * 1000:
                 chunk = self._read(stream, frame_bytes)
                 if not chunk:

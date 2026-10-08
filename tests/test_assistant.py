@@ -278,6 +278,30 @@ class AssistantSkillTests(unittest.TestCase):
         self.assertEqual(reply.skill, "time_date")
         self.assertTrue(providers.spoken)
 
+    def test_voice_recorder_failure_names_reason(self):
+        providers = FakeProviders(voice_enabled=True)
+        from jarvis.core.errors import ProviderError
+
+        providers.record = lambda: (_ for _ in ()).throw(
+            ProviderError("микрофон занят другой программой"))
+        assistant = make_assistant(providers=providers)
+        reply = assistant.handle_voice(source="api")
+        self.assertFalse(reply.ok)
+        self.assertIn("микрофон занят", reply.text)
+
+    def test_voice_unexpected_failure_is_explained(self):
+        providers = FakeProviders(voice_enabled=True)
+
+        def boom():
+            raise RuntimeError("порт звука занят")
+
+        providers.record = boom
+        assistant = make_assistant(providers=providers)
+        reply = assistant.handle_voice(source="api")
+        self.assertFalse(reply.ok)
+        self.assertIn("порт звука занят", reply.text)
+        self.assertNotIn("internal", reply.text)
+
     def test_voice_without_speech(self):
         providers = FakeProviders(voice_enabled=True)
         providers.recorder.path = None

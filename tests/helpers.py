@@ -58,6 +58,7 @@ class FakeProviders:
         self.stt = FakeSTT()
         self.tts = FakeTTS()
         self.recorder = FakeRecorder()
+        self.pages = FakePages()
 
     def speak(self, text: str, language: str | None = None) -> bool:
         self.spoken.append(text)
@@ -87,6 +88,12 @@ class FakeProviders:
     def record(self):
         return self.recorder.record()
 
+    def read_page(self, target: str, max_chars: int | None = None) -> dict:
+        page = self.pages.fetch(target)
+        if max_chars:
+            page = dict(page, text=page["text"][:max_chars])
+        return page
+
     def maintain(self) -> None:
         pass
 
@@ -95,6 +102,32 @@ class FakeProviders:
 
     def state(self) -> dict:
         return {"voice_enabled": self.voice_enabled}
+
+
+class FakePages:
+    """Страницы сайтов: заранее заданные ответы, никакой сети."""
+
+    def __init__(self):
+        self.pages: dict[str, dict] = {}
+        self.error: Exception | None = None
+        self.requested: list[str] = []
+
+    def add(self, url: str, *, title: str = "Тестовая страница", text: str = "",
+            links: list[dict] | None = None) -> str:
+        target = url.split("//")[-1].strip("/")
+        self.pages[target] = {"url": url, "title": title, "text": text, "links": links or []}
+        return target
+
+    def fetch(self, target: str) -> dict:
+        self.requested.append(target)
+        if self.error is not None:
+            raise self.error
+        page = self.pages.get(target.strip().rstrip("/"))
+        if page is None:
+            from jarvis.core.errors import ProviderError
+
+            raise ProviderError(f"страница {target} недоступна")
+        return dict(page)
 
 
 class FakeLLM:

@@ -31,6 +31,8 @@ from urllib.parse import parse_qs, urlparse
 
 from .. import __version__
 from ..core import paths
+from ..core.errors import JarvisError
+from ..core.i18n import get_translator
 from ..core.logging_setup import get_logger
 
 log = get_logger("interfaces.api")
@@ -319,12 +321,26 @@ class LocalApi:
                 reply = assistant.handle_text(task.text, source=task.source,
                                               confirm_callback=confirm, speak=speak)
             task.reply = reply.to_dict()
+        except JarvisError as exc:
+            # Понятный отказ ядра: показываем его текст, а не «внутренняя ошибка».
+            log.warning("задача %s отклонена: %s", task.id, exc)
+            assistant.journal.error("api", f"запрос не выполнен: {exc}")
+            task.error = str(exc)
+            task.reply = {"text": get_translator(assistant.language).t(exc.user_message_key),
+                          "ok": False, "error": str(exc), "state": "error", "skill": None,
+                          "action": None, "continue_dialog": False, "await_confirmation": False,
+                          "data": {"details": getattr(exc, "details", "")}}
         except Exception as exc:  # noqa: BLE001 - интерфейс не должен падать вместе с ядром
             log.exception("задача %s упала", task.id)
-            task.error = f"{type(exc).__name__}: {exc}"
-            task.reply = {"text": "Внутренняя ошибка. Подробности — в журнале.", "ok": False,
-                          "error": "internal", "state": "error", "skill": None, "action": None,
-                          "continue_dialog": False, "await_confirmation": False, "data": {}}
+            reason = f"{type(exc).__name__}: {exc}"
+            task.error = reason
+            # Пишем причину и в журнал: раньше интерфейс показывал «internal», а
+            # разбираться было негде — подробности оставались только в файле лога.
+            assistant.journal.error("api", f"внутренняя ошибка запроса: {reason}")
+            task.reply = {"text": get_translator(assistant.language).t("error.generic") + f" ({reason[:160]})",
+                          "ok": False, "error": reason, "state": "error", "skill": None,
+                          "action": None, "continue_dialog": False, "await_confirmation": False,
+                          "data": {}}
         finally:
             if not task.decision.is_set():
                 task.decision.set()  # отпускаем возможное ожидание подтверждения

@@ -56,6 +56,9 @@ const LABELS = {
   "confirm.default": "Выполнить действие? Разрешите, если это то, что вы просили.",
   "confirm.request": "Запрос: «{text}»",
   "error.core": "Ядро не ответило: {reason}",
+  "error.details": "Подробности: {reason}",
+  "voice.unavailable": "Микрофон недоступен: {reason}. Запись звука ставится отдельно: pip install -e \"[voice]\"",
+  "provider.search": "Поиск",
   "about.copied": "Сведения о программе скопированы",
   "about.stop": "Остановить Jarvis",
   "about.stop_hint": "Ядро выключится, окно перестанет отвечать. Запустить снова: jarvis gui",
@@ -111,7 +114,7 @@ function bubbleClass(role, ok) {
 /** Провайдеры одной строкой для подписи в шапке. */
 function providerChips(status) {
   const providers = (status && status.providers) || {};
-  return ["llm", "stt", "tts"].map((name) => {
+  return ["llm", "search", "stt", "tts"].map((name) => {
     const state = providers[name] || {};
     const ready = Boolean(state.available);
     return {
@@ -207,6 +210,9 @@ if (typeof document !== "undefined") {
   const el = (id) => document.getElementById(id);
   const state = {
     busy: false,
+    shown: [],          // что уже показано локально (защита от дублей из истории)
+    voiceReady: null,   // доступна ли запись звука
+    voiceReason: "",
     pendingId: null,
     lastEventSeq: 0,
     lastChatTs: 0,
@@ -230,6 +236,24 @@ if (typeof document !== "undefined") {
 
   function setHint(text) { el("hint").textContent = text; }
 
+  /** Доступен ли микрофон: причину показываем в подсказке под полем ввода. */
+  function updateVoiceHint(status) {
+    const providers = (status && status.providers) || {};
+    const recorder = providers.recorder || {};
+    state.voiceReady = recorder.available !== false;
+    state.voiceReason = recorder.reason || "";
+    const mic = el("mic");
+    mic.setAttribute("aria-disabled", state.voiceReady ? "false" : "true");
+    mic.title = state.voiceReady ? "Слушать (Ctrl+L)" : state.voiceReason;
+    if (!state.voiceReady && !el("hint").dataset.custom) {
+      el("hint").textContent = t("voice.unavailable", { reason: state.voiceReason });
+      el("hint").dataset.custom = "1";
+    } else if (state.voiceReady && el("hint").dataset.custom) {
+      setHint("Enter — отправить · Ctrl+L — слушать · Esc — закрыть окно подтверждения");
+      delete el("hint").dataset.custom;
+    }
+  }
+
   function setState(name, label) {
     const status = el("status");
     status.dataset.state = name || "idle";
@@ -244,7 +268,26 @@ if (typeof document !== "undefined") {
 
   // -------------------------------------------------------------------- чат
 
-  function addBubble(role, text, ok) {
+  /** Запомнить, что это сообщение уже показано локально.
+   *
+   * История приходит с сервера отдельным опросом, и раньше один и тот же ответ
+   * показывался дважды: сначала сразу после запроса, потом из истории. Теперь
+   * свои сообщения запоминаются, и история их повторно не рисует.
+   */
+  function rememberShown(role, text) {
+    state.shown.push({ role, text, at: Date.now() / 1000 });
+    if (state.shown.length > 12) state.shown.shift();
+  }
+
+  function wasShown(role, text) {
+    const now = Date.now() / 1000;
+    const index = state.shown.findIndex((item) => item.role === role && item.text === text
+      && now - item.at < 120);
+    if (index >= 0) { state.shown.splice(index, 1); return true; }
+    return false;
+  }
+
+  function addBubble(role, text, ok, { remember = false } = {}) {
     if (!text) return;
     const node = document.createElement("div");
     node.className = bubbleClass(role, ok);
@@ -252,8 +295,8 @@ if (typeof document !== "undefined") {
     el("chat-feed").appendChild(node);
     const scroller = el("chat-scroll");
     scroller.scrollTop = scroller.scrollHeight;
+    if (remember) rememberShown(role, text);
   }
-
   function addSystem(text) { addBubble("system", text, true); }
 
   async function refreshHistory() {
@@ -262,7 +305,10 @@ if (typeof document !== "undefined") {
       const ts = Number(record.ts || 0);
       if (ts <= state.lastChatTs) continue;
       state.lastChatTs = ts;
-      addBubble(record.role === "user" ? "user" : "assistant", String(record.text || ""), true);
+      const role = record.role === "user" ? "user" : "assistant";
+      const text = String(record.text || "");
+      if (wasShown(role, text)) continue;      // это сообщение уже показано локально
+      addBubble(role, text, true);
     }
   }
 
@@ -270,8 +316,19 @@ if (typeof document !== "undefined") {
     if (!reply) return;
     const text = reply.text || reply.speech || "";
     if (!text) return;
-    if (reply.ok === false && reply.error) addBubble("system", t("error.core", { reason: reply.error }), false);
-    else addBubble("assistant", text, true);
+    if (reply.ok === false) {
+      // Показываем текст от ядра: там уже объяснено, что случилось. Своя
+      // формулировка («ядро не ответило») оставалась загадкой для пользователя.
+      addBubble("assistant", text, false);
+      const details = (reply.data && reply.data.details) || "";
+      if (reply.error && !/^[a-z_]+$/.test(String(reply.error))) {
+        toast(t("error.details", { reason: String(reply.error).slice(0, 200) }), "error");
+      } else if (details) {
+        toast(t("error.details", { reason: String(details).slice(0, 200) }), "error");
+      }
+    } else {
+      addBubble("assistant", text, true, { remember: true });
+    }
     setState(reply.ok === false ? "error" : "idle");
   }
 
@@ -341,6 +398,7 @@ if (typeof document !== "undefined") {
   async function send(text) {
     if (state.busy) return;
     const speak = el("speak").getAttribute("aria-pressed") === "true";
+    addBubble("user", text, true, { remember: true });
     setBusy(true);
     setState("thinking");
     try {
@@ -353,6 +411,11 @@ if (typeof document !== "undefined") {
 
   async function listen() {
     if (state.busy) return;
+    if (state.voiceReady === false) {
+      // Не отправляем запрос, который заведомо не сработает: сразу говорим причину.
+      toast(t("voice.unavailable", { reason: state.voiceReason || "нет записи звука" }), "error");
+      return;
+    }
     const speak = el("speak").getAttribute("aria-pressed") === "true";
     setBusy(true);
     setState("listening");
@@ -474,6 +537,12 @@ if (typeof document !== "undefined") {
         { key: "llm.timeout_seconds", label: "Ожидание ответа модели, с", kind: "number",
           note: "локальной модели нужно 30–120 с" },
         { key: "llm.api_key", label: "Ключ модели", kind: "secret" },
+        { key: "search.engine", label: "Поисковый сервис", kind: "choice",
+          options: ["auto", "duckduckgo", "searx"],
+          labels: { auto: "как ниже", duckduckgo: "DuckDuckGo", searx: "свой SearxNG" },
+          note: "DuckDuckGo в некоторых сетях недоступен — тогда укажите свой поисковик" },
+        { key: "search.instance", label: "Адрес своего поисковика", kind: "text",
+          note: "SearxNG с включённым format=json, например http://localhost:8888" },
       ],
     },
     {
@@ -603,8 +672,11 @@ if (typeof document !== "undefined") {
 
     if (row.kind === "choice") {
       const select = document.createElement("select");
-      const options = row.key === "assistant.language" ? languages : ["restricted", "normal"];
-      const labels = { restricted: t("permissions.restricted"), normal: t("permissions.normal") };
+      const options = row.options || (row.key === "assistant.language" ? languages : ["restricted", "normal"]);
+      const labels = Object.assign(
+        { restricted: t("permissions.restricted"), normal: t("permissions.normal") },
+        row.labels || {},
+      );
       for (const name of options) {
         const option = document.createElement("option");
         option.value = name;
@@ -899,6 +971,7 @@ if (typeof document !== "undefined") {
       }
       el("conn").textContent = "ядро на связи";
       document.body.dataset.connected = "true";
+      updateVoiceHint(status);
     } catch (error) {
       el("conn").textContent = "ядро не отвечает";
       document.body.dataset.connected = "false";

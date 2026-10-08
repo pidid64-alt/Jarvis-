@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tests.helpers import FakeProviders, isolated_home, make_assistant
@@ -239,10 +242,127 @@ class SkillTests(unittest.TestCase):
         self.assertTrue(reply.ok)
         self.assertEqual(self.platform.urls, ["https://example.com"])
 
+    def test_search_failure_shows_reason(self):
+        # «Сервис не ответил» ничего не объясняло: теперь видно, что именно сломалось
+        providers = FakeProviders()
+
+        def boom(query):
+            raise RuntimeError("dns: имя не разрешилось")
+
+        providers.search.search = boom
+        assistant = make_assistant(providers=providers)
+        reply = assistant.handle_text("найди квантовую запутанность", confirm_callback=lambda question: True)
+        self.assertFalse(reply.ok)
+        self.assertIn("dns", reply.text)
+
     def test_open_site_without_dot_uses_search(self):
         reply = self.say("открой сайт погода")
         self.assertTrue(reply.ok)
         self.assertTrue(self.platform.urls[0].startswith("https://duckduckgo.com/"))
+
+
+class LocalFileSearchTests(unittest.TestCase):
+    """«найди файл …» ищет на диске, а не в интернете."""
+
+    def setUp(self):
+        self.home = isolated_home()
+        self.home.__enter__()
+        self.folder = tempfile.mkdtemp(prefix="jarvis-files-")
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        self.addCleanup(self.home.__exit__, None, None, None)
+        self.providers = FakeProviders()
+        self.assistant = make_assistant(providers=self.providers)
+
+    def say(self, text):
+        return self.assistant.handle_text(text, confirm_callback=lambda question: True)
+
+    def test_finds_file_in_home(self):
+        downloads = Path(self.folder) / "Downloads"
+        downloads.mkdir()
+        wanted = downloads / "Загрузки.txt"
+        wanted.write_text("мусор", encoding="utf-8")
+        with mock.patch("pathlib.Path.home", return_value=Path(self.folder)):
+            reply = self.say("найди файл загрузки.txt")
+        self.assertTrue(reply.ok)
+        self.assertIn(str(wanted), reply.text)
+        # провайдер поиска в интернете не тронут
+        self.assertEqual(self.providers.search.queries, [])
+
+    def test_missing_file_is_explained(self):
+        with mock.patch("pathlib.Path.home", return_value=Path(self.folder)):
+            reply = self.say("найди файл секретный-доклад.pdf")
+        self.assertFalse(reply.ok)
+        self.assertIn("не нашёл", reply.text)
+
+    def test_empty_query_asks_back(self):
+        reply = self.say("найди файл")
+        self.assertFalse(reply.ok)
+        self.assertIn("Какой файл", reply.text)
+
+
+class WebPageSkillTests(unittest.TestCase):
+    """«прочитай сайт» и «найди на сайте»: страница читается, ответ — по её тексту."""
+
+    def setUp(self):
+        self.home = isolated_home()
+        self.home.__enter__()
+        self.addCleanup(self.home.__exit__, None, None, None)
+        self.providers = FakeProviders()
+        self.assistant = make_assistant(providers=self.providers)
+        self.target = self.providers.pages.add(
+            "https://example.com",
+            title="Пример",
+            text="Пример страницы. Контакты: support@example.com, телефон 555-01-23. "
+                 "Раздел о доставке.",
+            links=[{"text": "Контакты", "href": "https://example.com/contacts"}],
+        )
+        self.assistant.handle_text("привет")  # прогрев: навыки загружены
+
+    def say(self, text):
+        return self.assistant.handle_text(text, confirm_callback=lambda question: True)
+
+    def test_read_uses_model_and_page(self):
+        def answer(messages, **kwargs):
+            self.providers.llm.calls.append(messages)
+            return "Страница-визитка: контакты и доставка."
+
+        self.providers.llm.chat_text = answer
+        reply = self.say("прочитай сайт example.com")
+        self.assertTrue(reply.ok)
+        self.assertIn("визитка", reply.text)
+        self.assertEqual(self.providers.pages.requested, [self.target])
+        prompt = self.providers.llm.calls[-1][-1]["content"]
+        self.assertIn("support@example.com", prompt)  # текст страницы действительно доехал до модели
+
+    def test_find_answers_from_page_without_model(self):
+        self.providers.llm.enabled = False  # без модели навык отвечает сам
+        reply = self.say("найди на сайте example.com контакты")
+        self.assertTrue(reply.ok)
+        self.assertIn("support@example.com", reply.text)
+
+    def test_read_without_model_shows_page_text(self):
+        self.providers.llm.enabled = False
+        reply = self.say("прочитай сайт example.com")
+        self.assertTrue(reply.ok)
+        self.assertIn("Пример страницы", reply.text)
+
+    def test_page_failure_shows_reason(self):
+        from jarvis.core.errors import ProviderError
+
+        self.providers.pages.error = ProviderError("не удалось соединиться")
+        reply = self.say("прочитай сайт example.com")
+        self.assertFalse(reply.ok)
+        self.assertIn("не удалось соединиться", reply.text)
+
+    def test_without_url_asks_for_address(self):
+        reply = self.say("прочитай сайт")
+        self.assertFalse(reply.ok)
+        self.assertIn("адрес", reply.text.lower())
+
+    def test_find_without_query_asks_back(self):
+        reply = self.say("найди на сайте example.com")
+        self.assertFalse(reply.ok)
+        self.assertIn("искать", reply.text.lower())
 
 
 if __name__ == "__main__":

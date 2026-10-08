@@ -1,7 +1,11 @@
-"""Веб-поиск: ddgs (если установлен) или встроенный запрос к DuckDuckGo.
+"""Веб-поиск: ddgs, встроенный запрос к DuckDuckGo или свой SearxNG.
 
 Внешних обязательных зависимостей нет: запасной путь использует
 Instant Answer API и HTML-выдачу DuckDuckGo через стандартную библиотеку.
+
+Важно: в части сетей DuckDuckGo недоступен целиком. Поэтому, если в настройках
+задан адрес своего поисковика (``search.instance`` — любой SearxNG), он идёт
+первым, а в тексте ошибки видно, кто именно не ответил.
 """
 
 from __future__ import annotations
@@ -29,9 +33,15 @@ def _strip_tags(value: str) -> str:
 class WebSearch:
     """Поиск в интернете. Возвращает список сниппетов {title, body, href}."""
 
-    def __init__(self, *, max_results: int = 5, timeout: float = 12.0, enabled: bool = True):
+    def __init__(self, *, max_results: int = 5, timeout: float = 12.0, enabled: bool = True,
+                 instance: str = "", engine: str = "auto"):
         self.max_results = max_results
         self.enabled = enabled
+        self.instance = (instance or "").strip().rstrip("/")
+        self.engine = (engine or "auto").strip().lower()
+        if self.engine not in ("auto", "duckduckgo", "searx"):
+            log.warning("неизвестный поисковик %r — работаю как auto", engine)
+            self.engine = "auto"
         self.client = HttpClient(timeout=timeout, retries=1, breaker=CircuitBreaker("search", threshold=3,
                                                                                      cooldown=60.0))
 
@@ -39,6 +49,10 @@ class WebSearch:
     def available(self) -> tuple[bool, str]:
         if not self.enabled:
             return False, "поиск выключен в настройках"
+        if self.engine == "searx" or (self.engine == "auto" and self.instance):
+            if not self.instance:
+                return False, "выбран свой поисковик, но не задан его адрес (search.instance)"
+            return True, f"готов (свой поисковик: {self.instance})"
         try:
             import ddgs  # noqa: F401
 
@@ -55,16 +69,28 @@ class WebSearch:
         if not ready:
             raise ProviderError(reason)
 
-        snippets = self._via_ddgs(query)
-        if snippets:
-            return snippets
-        snippets = self._via_instant_answer(query)
-        if snippets:
-            return snippets
-        snippets = self._via_html(query)
-        if snippets:
-            return snippets
-        raise ProviderError("поиск не дал результатов")
+        # Порядок попыток: свой поисковик (если задан), затем три пути DuckDuckGo.
+        attempts: list[tuple[str, object]] = []
+        if self.engine == "searx" or (self.engine == "auto" and self.instance):
+            attempts.append(("свой поисковик", self._via_searx))
+        if self.engine != "searx":
+            attempts.append(("ddgs", self._via_ddgs))
+            attempts.append(("DuckDuckGo Instant Answer", self._via_instant_answer))
+            attempts.append(("html.duckduckgo.com", self._via_html))
+
+        problems: list[str] = []
+        for name, step in attempts:
+            try:
+                snippets = step(query)  # type: ignore[operator]
+            except ProviderError as exc:  # понятная причина — запомним и покажем
+                problems.append(f"{name}: {exc}")
+                continue
+            if snippets:
+                log.info("поиск «%s» ответил через %s", query, name)
+                return snippets
+        if problems:
+            raise ProviderError("ни один из сервисов не ответил — " + "; ".join(problems[:3]))
+        raise ProviderError("ни один из сервисов ничего не вернул по этому запросу")
 
     def _via_ddgs(self, query: str) -> list[dict[str, str]]:
         try:
@@ -82,6 +108,31 @@ class WebSearch:
             for item in items
             if item.get("title") or item.get("body")
         ]
+
+    def _via_searx(self, query: str) -> list[dict[str, str]]:
+        """Запрос к своему SearxNG: /search?format=json."""
+        if not self.instance:
+            raise ProviderError("адрес поисковика не задан")
+        url = (f"{self.instance}/search?format=json&language=ru&safesearch=1&q="
+               + urllib.parse.quote_plus(query))
+        try:
+            body = self.client.get(url, headers={"Accept": "application/json"}).body
+        except Exception as exc:  # noqa: BLE001 - адрес мог быть введён с ошибкой
+            raise ProviderError(f"не ответил ({exc})") from exc
+        try:
+            data = json.loads(body.decode("utf-8", "replace") or "{}")
+        except ValueError as exc:
+            raise ProviderError("ответ не в формате json (включите format=json в SearxNG)") from exc
+        results: list[dict[str, str]] = []
+        for item in (data.get("results") or [])[: self.max_results]:
+            if not isinstance(item, dict):
+                continue
+            results.append({
+                "title": str(item.get("title", "")),
+                "body": str(item.get("content", "") or item.get("snippet", "")),
+                "href": str(item.get("url", "")),
+            })
+        return [item for item in results if item["title"] or item["body"]]
 
     def _via_instant_answer(self, query: str) -> list[dict[str, str]]:
         url = ("https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q="

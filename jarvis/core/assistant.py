@@ -256,8 +256,16 @@ class Assistant:
         try:
             wav_path = self.providers.record()
         except JarvisError as exc:
-            return Reply(text=get_translator(self._language).t(exc.user_message_key), ok=False,
+            # Причина важна: «Сервис не ответил» не подсказывает, что делать.
+            reason = getattr(exc, "details", "") or str(exc)
+            self.journal.error("core.voice", f"запись недоступна: {reason}")
+            return Reply(text=self.t("voice.recorder_failed", reason=reason), ok=False,
                          error=str(exc), state=State.ERROR)
+        except Exception as exc:  # noqa: BLE001 - микрофон бывает капризным
+            log.exception("ошибка записи звука")
+            self.journal.error("core.voice", f"ошибка записи звука: {exc!r}")
+            return Reply(text=self.t("voice.failed", reason=f"{type(exc).__name__}: {exc}"[:200]),
+                         ok=False, error=str(exc), state=State.ERROR)
         if wav_path is None:
             self._set_state(State.IDLE)
             return Reply(text=self.t("voice.no_speech"), ok=False, error="no_speech")
@@ -265,6 +273,11 @@ class Assistant:
             text = self.providers.transcribe(wav_path)
         except ProviderError as exc:
             self.journal.error("core.voice", f"распознавание недоступно: {exc}")
+            return Reply(text=self.t("voice.stt_failed") + f" ({str(exc)[:160]})", ok=False,
+                         error=str(exc), state=State.ERROR)
+        except Exception as exc:  # noqa: BLE001 - распознавание бывает капризным
+            log.exception("ошибка распознавания")
+            self.journal.error("core.voice", f"ошибка распознавания: {exc!r}")
             return Reply(text=self.t("voice.stt_failed"), ok=False, error=str(exc), state=State.ERROR)
         if not text:
             return Reply(text=self.t("voice.not_recognized"), ok=False, error="empty_stt")

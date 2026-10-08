@@ -227,6 +227,13 @@ async function main() {
   check("ответ на команду пришёл", /Сейчас|врем/i.test(after) || after.includes("Не понял"),
         after.slice(-160));
   check("ввод очищен после отправки", input.value === "", `«${input.value}»`);
+  // --- ответ не должен двоиться: опрос истории не рисует его второй раз ----
+  await tick(3600);  // ждём опрос истории (каждые 3 с)
+  const bubbles = rows("#chat-feed .bubble").map((node) => node.textContent.trim());
+  const duplicates = bubbles.filter((text, index) => text && bubbles.indexOf(text) !== index);
+  check("ответ в чате показан один раз", duplicates.length === 0,
+        `повторы: ${JSON.stringify(duplicates.slice(0, 3))}`);
+
   check("в чате нет внутренних ошибок", !/не ответило|is not a function|undefined/i.test(after),
         (after.match(/[^.]*(?:не ответило|is not a function|undefined)[^.]*/i) || [""])[0].slice(0, 120));
 

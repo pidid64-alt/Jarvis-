@@ -33,6 +33,7 @@ class Providers:
         self._tts = None
         self._search = None
         self._recorder = None
+        self._pages = None
 
     # ------------------------------------------------------------------- lazy
     @property
@@ -103,6 +104,8 @@ class Providers:
                 max_results=int(section.get("max_results", 5)),
                 timeout=float(section.get("timeout_seconds", 12)),
                 enabled=bool(section.get("enabled", True)),
+                instance=str(section.get("instance", "") or ""),
+                engine=str(section.get("engine", "auto") or "auto"),
             )
         return self._search
 
@@ -127,12 +130,28 @@ class Providers:
         return self._recorder
 
     # --------------------------------------------------------------- shortcuts
-    @property
     # ------------------------------------------------------- удобства для навыков
     def search_web(self, query: str, limit: int | None = None) -> list[dict[str, str]]:
         """Поиск в интернете. Ошибка → ProviderError (её покажет ядро)."""
         results = self.search.search(query)
         return results[:limit] if limit else results
+
+    @property
+    def pages(self):
+        """Чтение веб-страниц (нужно навыку «Страница сайта»)."""
+        if self._pages is None:
+            from .pages import PageReader
+
+            section = self.config.section("search")
+            self._pages = PageReader(timeout=float(section.get("timeout_seconds", 15)))
+        return self._pages
+
+    def read_page(self, target: str, max_chars: int | None = None) -> dict:
+        """Забирает страницу и отдаёт {url, title, text, links}."""
+        page = self.pages.fetch(target)
+        if max_chars:
+            page = dict(page, text=page["text"][:max_chars])
+        return page
 
     def llm_available(self) -> bool:
         ready, _reason = self.llm.available()
@@ -193,7 +212,7 @@ class Providers:
 
     def state(self) -> dict[str, Any]:
         result: dict[str, Any] = {"voice_enabled": self.voice_enabled}
-        for name in ("llm", "stt", "tts", "search", "recorder"):
+        for name in ("llm", "stt", "tts", "search", "recorder", "pages"):
             provider = getattr(self, name if name != "recorder" else "recorder")
             try:
                 result[name] = provider.state()

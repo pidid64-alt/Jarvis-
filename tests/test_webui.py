@@ -280,7 +280,8 @@ class PageLogicTests(unittest.TestCase):
             "out.push(P.bubbleClass('user', true));"
             "out.push(P.bubbleClass('jarvis', false));"
             "out.push(P.bubbleClass('jarvis', true));"
-            "out.push(P.providerChips({providers:{llm:{available:false},stt:{available:true}}}).map(c=>c.ok).join(','));"
+            "out.push(P.providerChips({providers:{llm:{available:false},stt:{available:true}}})"
+            "  .map(c=>c.name+'='+c.ok).join(','));"
             "out.push(P.journalRows([{ts:1700000000,level:'warning',source:'skill.power',message:'нужно подтверждение'}])"
             "  .map(r=>r.level+':'+r.source).join(','));"
             "const values={a:1,b:'x',c:true}, original={a:1,b:'y',c:true};"
@@ -304,7 +305,8 @@ class PageLogicTests(unittest.TestCase):
         self.assertEqual(answer[3], "dark")
         self.assertEqual(answer[4:7], ["warning", "error", "info"])
         self.assertEqual(answer[7:10], ["bubble user", "bubble error", "bubble assistant"])
-        self.assertEqual(answer[10], "false,true,false")
+        # микрофон и поиск тоже видны в шапке: по ним сразу понятно, что работает
+        self.assertEqual(answer[10], "llm=false,search=false,stt=true,tts=false")
         self.assertEqual(answer[11], "warning:skill.power")
         self.assertEqual(answer[12], '[["b","x"]]')
         self.assertEqual(answer[13], "Навыков: 5 (включено 4)")

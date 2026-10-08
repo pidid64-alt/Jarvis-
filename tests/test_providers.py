@@ -195,6 +195,143 @@ class SearchProviderTests(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+class RealProvidersSurfaceTests(unittest.TestCase):
+    """Сторож за «удобствами для навыков» в настоящих провайдерах.
+
+    Именно здесь пряталась причина всех «Сервис не ответил»: метод
+    ``search_web`` случайно оказался объявлен свойством, и любой поиск падал с
+    TypeError ещё до сети. Тесты со заглушками этого не видели — у заглушки
+    метод самый обычный.
+    """
+
+    SHORTCUTS = ("search_web", "read_page", "llm_available", "ask_model", "speak", "notify",
+                 "record", "transcribe", "state", "maintain", "stop")
+
+    def test_no_method_is_a_property(self):
+        import ast
+        import pathlib as pathlib_module
+
+        root = pathlib_module.Path(__file__).resolve().parents[1] / "jarvis"
+        found: list[str] = []
+        for file in root.rglob("*.py"):
+            tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.FunctionDef):
+                    continue
+                if any(ast.unparse(item) == "property" for item in node.decorator_list):
+                    # свойство с аргументами (кроме self) — ошибка: вызывать его нельзя
+                    if len(node.args.args) > 1 or node.args.kwonlyargs:
+                        found.append(f"{file.relative_to(root.parent)}:{node.lineno} {node.name}")
+        self.assertEqual(found, [], "методы объявлены свойствами и сломают навыки: " + ", ".join(found))
+
+    @staticmethod
+    def real_providers():
+        """Настоящие провайдеры (не заглушки) в отдельном каталоге настроек."""
+        from jarvis.core.assistant import create_assistant
+
+        return create_assistant().providers
+
+    def test_shortcuts_are_callable(self):
+        import inspect
+
+        from jarvis.providers import Providers
+
+        with isolated_home():
+            providers = self.real_providers()
+            self.assertIsInstance(providers, Providers)
+            for name in self.SHORTCUTS:
+                attribute = inspect.getattr_static(Providers, name)
+                self.assertNotIsInstance(attribute, property, f"{name} объявлен свойством")
+                self.assertTrue(callable(getattr(providers, name)), f"{name} нельзя вызвать")
+
+    def test_search_web_reaches_the_search_provider(self):
+        from tests.helpers import FakeSearch
+
+        with isolated_home():
+            providers = self.real_providers()
+            providers._search = FakeSearch()
+            found = providers.search_web("тихоходки", limit=2)
+            self.assertTrue(found)
+            self.assertLessEqual(len(found), 2)
+            self.assertIn("тихоходки", providers.search.queries)
+
+    def test_read_page_uses_the_page_reader(self):
+        from tests.helpers import FakePages
+
+        with isolated_home():
+            providers = self.real_providers()
+            pages = FakePages()
+            pages.add("https://example.com", title="Пример", text="текст страницы")
+            providers._pages = pages
+            page = providers.read_page("example.com")
+            self.assertEqual(page["title"], "Пример")
+            self.assertEqual(providers.read_page("example.com", max_chars=4)["text"], "текс")
+            with self.assertRaises(ProviderError):
+                providers.read_page("нет-такого-сайта.example")
+
+
+class SearxSearchTests(unittest.TestCase):
+    """Свой поисковик: там, где DuckDuckGo недоступен, выручает SearxNG."""
+
+    @staticmethod
+    def make(**kwargs):
+        from jarvis.providers.search import WebSearch
+
+        return WebSearch(**kwargs)
+
+    def test_results_come_from_instance(self):
+        from unittest import mock
+
+        search = self.make(instance="http://localhost:8888/", engine="auto")
+        payload = {"results": [{"title": "Квантовая запутанность", "content": "Связь частиц",
+                                "url": "https://example.org/quantum"}]}
+
+        class Response:
+            body = json.dumps(payload).encode("utf-8")
+
+        with mock.patch.object(search, "client") as client:
+            client.get.return_value = Response()
+            results = search.search("квантовая запутанность")
+        self.assertEqual(results[0]["title"], "Квантовая запутанность")
+        self.assertEqual(results[0]["href"], "https://example.org/quantum")
+        called = client.get.call_args[0][0]
+        self.assertTrue(called.startswith("http://localhost:8888/search?"))
+        self.assertIn("format=json", called)
+
+    def test_unreachable_instance_is_named(self):
+        from unittest import mock
+
+        search = self.make(instance="http://localhost:8888", engine="searx")
+        with mock.patch.object(search, "client") as client:
+            client.get.side_effect = OSError("Connection refused")
+            with self.assertRaises(ProviderError) as caught:
+                search.search("что-нибудь")
+        self.assertIn("не ответил", str(caught.exception))
+        self.assertIn("Connection refused", str(caught.exception))
+
+    def test_searx_without_address_asks_for_it(self):
+        search = self.make(engine="searx")
+        ready, reason = search.available()
+        self.assertFalse(ready)
+        self.assertIn("search.instance", reason)
+        with self.assertRaises(ProviderError):
+            search.search("что-нибудь")
+
+    def test_broken_json_is_explained(self):
+        from unittest import mock
+
+        search = self.make(instance="http://localhost:8888", engine="searx")
+
+        class Response:
+            body = "<html>это не json</html>".encode("utf-8")
+
+        with mock.patch.object(search, "client") as client:
+            client.get.return_value = Response()
+            with self.assertRaises(ProviderError) as caught:
+                search.search("что-нибудь")
+        self.assertIn("json", str(caught.exception))
+
+
 class TimeoutRetryTests(unittest.TestCase):
     """Таймаут не повторяем: локальная модель в этот момент ещё считает ответ.
 
@@ -232,6 +369,70 @@ class TimeoutRetryTests(unittest.TestCase):
         self.assertIn("не ответила", str(caught.exception))
         self.assertIn("Ожидание ответа модели", getattr(caught.exception, "details", ""))
         self.assertEqual(len(_Handler.seen_bodies), 1, "LLM не должен повторять по таймауту")
+
+
+class MicrophoneTests(unittest.TestCase):
+    """Микрофон: сбой звуковой системы должен объясняться словами, а не «internal»."""
+
+    @staticmethod
+    def _recorder():
+        from jarvis.providers.audio import Recorder
+
+        return Recorder(beep=False)
+
+    def test_stream_failure_names_reason(self):
+        import contextlib
+        from unittest import mock
+
+        @contextlib.contextmanager
+        def broken(sample_rate):
+            raise OSError("No Default Input Device Available")
+            yield  # pragma: no cover
+
+        with mock.patch("jarvis.providers.audio.get_platform") as platform, \
+                mock.patch.object(self._recorder(), "available", return_value=(True, "готов")):
+            platform.return_value.mic_stream = broken
+            recorder = self._recorder()
+            with mock.patch.object(recorder, "available", return_value=(True, "готов")):
+                with self.assertRaises(ProviderError) as caught:
+                    recorder.record()
+        text = str(caught.exception)
+        self.assertIn("No Default Input Device", text)
+        self.assertIn("микрофон", text)
+        self.assertIn("разрешён", text)
+
+    def test_windows_without_microphone_explains(self):
+        import sys
+        import types
+        from unittest import mock
+
+        fake_sd = types.ModuleType("sounddevice")
+        fake_sd.query_devices = lambda: [{"name": "Мониторы", "max_input_channels": 0}]
+        with mock.patch.dict(sys.modules, {"sounddevice": fake_sd}), \
+                mock.patch("jarvis.providers.audio.get_platform") as platform:
+            platform.return_value.name = "windows"
+            from jarvis.providers.audio import Recorder
+
+            ready, reason = Recorder.available(self._recorder())
+        self.assertFalse(ready)
+        self.assertIn("не видит ни одного микрофона", reason)
+
+    def test_windows_with_microphone_is_ready(self):
+        import sys
+        import types
+        from unittest import mock
+
+        fake_sd = types.ModuleType("sounddevice")
+        fake_sd.query_devices = lambda: [
+            {"name": "Микрофон (Realtek)", "max_input_channels": 2}]
+        with mock.patch.dict(sys.modules, {"sounddevice": fake_sd}), \
+                mock.patch("jarvis.providers.audio.get_platform") as platform:
+            platform.return_value.name = "windows"
+            from jarvis.providers.audio import Recorder
+
+            ready, reason = Recorder.available(self._recorder())
+        self.assertTrue(ready)
+        self.assertIn("Realtek", reason)
 
 
 class VoiceFlagTests(unittest.TestCase):

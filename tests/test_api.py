@@ -222,6 +222,19 @@ class ApiTestCase(unittest.TestCase):
         with self.assertRaises(ApiUnavailable):
             self.client.result("нет-такого-номера")
 
+    def test_internal_failure_shows_reason_and_journal(self):
+        # раньше окно показывало «Ядро не ответило: internal» и разбираться было негде
+        def boom(*args, **kwargs):
+            raise RuntimeError("сломалось внутри ядра")
+
+        self.assistant.handle_text = boom
+        answer = self.client.ask("сколько времени")
+        self.assertEqual(answer["state"], "done")
+        self.assertFalse(answer["reply"]["ok"])
+        self.assertIn("сломалось внутри ядра", answer["reply"]["text"])
+        notes = self.assistant.journal.read(limit=20, search="внутренняя ошибка")
+        self.assertTrue(notes, "причина не попала в журнал")
+
     def test_voice_without_speech_is_explained(self):
         self.providers.voice_enabled = True  # у подставного провайдера это просто поле
         self.providers.recorder.path = None

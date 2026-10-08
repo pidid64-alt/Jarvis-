@@ -73,6 +73,13 @@ extra_rules = ""
 enabled = true
 max_results = 5
 timeout_seconds = 12
+# auto — свой поисковик (если задан ниже), иначе DuckDuckGo;
+# duckduckgo — только DuckDuckGo; searx — только свой SearxNG
+engine = "auto"
+# Адрес своего поисковика SearxNG, например "http://localhost:8888" или
+# публичный инстанс. Нужен там, где DuckDuckGo недоступен; в SearxNG должно
+# быть разрешено format=json (settings.yml → search.formats: [html, json]).
+instance = ""
 
 [permissions]
 # restricted — опасные действия всегда требуют подтверждения (рекомендуется)
