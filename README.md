@@ -65,6 +65,7 @@ uv run pytest -q
 ```bash
 uv run jarvis chat              # интерактивный чат с агентом (все инструменты)
 uv run jarvis once "что нового?"# одиночный вопрос
+uv run jarvis telegram bot      # Telegram-бот управления (чат с ассистентом в TG)
 uv run jarvis tools             # реестр инструментов (встроенные + MCP)
 uv run jarvis fetch URL         # прочитать страницу без модели
 uv run jarvis fetch URL --js    # то же, но через headless-браузер (динамические страницы)
@@ -80,6 +81,21 @@ uv run jarvis audit             # журнал действий агента
 ```bash
 uv run playwright install chromium
 ```
+
+### Telegram-бот управления
+
+Бот = полноценный интерфейс Джарвиса в Telegram: пишешь сообщение — ассистент
+отвечает (те же инструменты, что и в CLI), а опасные действия подтверждает
+кнопками ✅/❌ прямо в чате.
+
+1. Создай бота: в Telegram @BotFather → `/newbot` → имя и @username → получишь токен.
+2. Впиши его в `.env`: `JARVIS_TELEGRAM_BOT_TOKEN=123456:ABC…`
+3. Запусти: `uv run jarvis telegram bot`
+4. Открой своего бота в Telegram → `/start` → пиши.
+
+Доступ только у владельца: числовой `JARVIS_TELEGRAM_OWNER_ID` в `.env`
+(свой id узнай у @userinfobot), либо владельцем становится первый, кто нажал
+`/start` после запуска (id запоминается в `data/bot_owner.json`).
 
 Проверка агента с инструментами (после заполнения `.env`):
 

@@ -336,13 +336,30 @@ async def _memory_delete(fact_id: int) -> None:
 
 
 @telegram_app.command("login")
-def telegram_login():
+def telegram_login(
+    force_sms: bool = typer.Option(False, "--sms", help="Прислать код СМС или звонком, а не в приложение"),
+):
     """Интерактивный вход в Telegram (телефон + код из приложения/СМС)."""
     _setup_stdio()
-    asyncio.run(_telegram_login())
+    asyncio.run(_telegram_login(force_sms))
 
 
-async def _telegram_login() -> None:
+@telegram_app.command("bot")
+def telegram_bot():
+    """Запустить Telegram-бота управления (нужен JARVIS_TELEGRAM_BOT_TOKEN)."""
+    _setup_stdio()
+    from jarvis.interfaces.tg_bot import run_bot
+
+    try:
+        asyncio.run(run_bot())
+    except SystemExit as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        console.print("\nБот остановлен.")
+
+
+async def _telegram_login(force_sms: bool = False) -> None:
     settings = get_settings()
     if not settings.telegram_api_id or not settings.telegram_api_hash:
         console.print("[red]Сначала задайте JARVIS_TELEGRAM_API_ID и JARVIS_TELEGRAM_API_HASH в .env[/]")
@@ -357,8 +374,30 @@ async def _telegram_login() -> None:
         settings.telegram_api_id,
         settings.telegram_api_hash,
     )
-    console.print("Запрашиваю код подтверждения (придёт в Telegram)…")
-    await client.start(phone=settings.telegram_phone or None)
+
+    # Телефон: из .env или спрашиваем вручную (формат обязателен: +79991234567).
+    phone = settings.telegram_phone.strip() or None
+    if phone is None:
+        console.print("Телефон не задан в .env (JARVIS_TELEGRAM_PHONE) — введу вручную.")
+        phone = Prompt.ask("Номер телефона аккаунта Telegram", default="").strip() or None
+    if phone is None:
+        console.print("[red]Без номера телефона войти нельзя. Попробуйте ещё раз.[/]")
+        raise typer.Exit(1)
+    if not phone.startswith("+"):
+        console.print(f"[yellow]Похоже, нет «+» в начале ({phone}). Добавляю.[/]")
+        phone = "+" + phone.lstrip("+").strip()
+
+    console.print(
+        f"Отправляю код подтверждения на {phone} "
+        f"({'СМС/звонок' if force_sms else 'в приложение Telegram, чат от сервиса «Telegram»'})…"
+    )
+    try:
+        await client.start(phone=phone, force_sms=force_sms)
+    except Exception as e:
+        console.print(f"[red]Вход не удался:[/] {type(e).__name__}: {e}")
+        console.print("Проверьте номер (с «+» и кодом страны) и попробуйте ещё раз.")
+        raise typer.Exit(1)
+
     me = await client.get_me()
     name = " ".join(part for part in (me.first_name, me.last_name or "") if part)
     console.print(f"[green]Готово:[] вошли как {name} (@{getattr(me, 'username', None)})")

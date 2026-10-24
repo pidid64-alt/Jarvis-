@@ -33,7 +33,12 @@ class Settings(BaseSettings):
     telegram_api_hash: str = ""
     telegram_phone: str = ""
 
-    @field_validator("telegram_api_id", mode="before")
+    # Бот управления (интерфейс этапа 1; токен выдаёт @BotFather).
+    telegram_bot_token: str = ""
+    # Telegram user_id владельца; если пусто — владелец определяется первым /start.
+    telegram_owner_id: int | None = None
+
+    @field_validator("telegram_api_id", "telegram_owner_id", mode="before")
     @classmethod
     def _empty_int_to_none(cls, value):
         """Пустая строка в .env (ключ ещё не заполнен) — это «нет значения», а не ошибка."""
