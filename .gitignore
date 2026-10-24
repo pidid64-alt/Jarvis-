@@ -1,13 +1,23 @@
-# Python environments and generated caches
+# Python: окружения и кеши
 .venv/
 venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
-# Local secrets and runtime artifacts
+ruff_cache/
+dist/
+build/
+
+# Секреты и данные ассистента — никогда не коммитить
 .env
+data/
+*.session
+*.session-journal
+
+# Логи
 *.log
-# Cloned and built by installers — not vendored in this repo
+
+# Тяжёлые артефакты старой версии (jarvis-legacy): сборки whisper
 whisper.cpp/
 whisper-win/
 whisper-win.zip

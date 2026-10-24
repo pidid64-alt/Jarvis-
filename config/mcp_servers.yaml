@@ -1,0 +1,46 @@
+# Реестр MCP-серверов. Изменения подхватываются командой `/mcp reload`
+# в чате или перезапуском — без правки кода.
+#
+# Общие поля:
+#   name            — уникальное имя (инструменты получат префикс mcp__<name>__)
+#   transport       — stdio | http | sse
+#   enabled         — false пропускает сервер
+#   allowed_tools   — allowlist: в реестр попадут ТОЛЬКО эти инструменты
+#   read_only       — true помечает все инструменты сервера как «чтение»
+#   tool_side_effects — точечные переопределения класса действия:
+#                       read | write | outbound
+#   Значения вида "env:ИМЯ" в env/headers подставляются из переменных окружения.
+
+servers:
+  # Демо-сервер для проверки MCP: официальный reference-сервер «fetch»
+  # (скачивает веб-страницы; pip-пакет mcp-server-fetch).
+  - name: fetch
+    transport: stdio
+    command: uvx
+    args: ["mcp-server-fetch"]
+    enabled: true
+    read_only: true
+    allowed_tools: ["fetch"]
+
+  # Пример файлового сервера из npm (нужен Node.js):
+  # - name: filesystem
+  #   transport: stdio
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "data/sample_docs"]
+  #   enabled: false
+  #   read_only: true
+  #   allowed_tools: ["list_directory", "read_file", "list_allowed_directories"]
+
+  # Пример HTTP-сервера (Streamable HTTP, стандарт 2025+):
+  # - name: weather
+  #   transport: http
+  #   url: https://mcp.example.com/mcp
+  #   headers:
+  #     Authorization: "env:WEATHER_TOKEN"
+  #   enabled: false
+
+  # Пример устаревшего SSE-транспорта:
+  # - name: legacy-sse
+  #   transport: sse
+  #   url: https://mcp.example.com/sse
+  #   enabled: false

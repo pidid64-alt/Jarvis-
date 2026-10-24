@@ -1,0 +1,13 @@
+# Файлы, не нужные внутри образа.
+.git
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+data
+.env
+*.session
+*.session-journal
+dist
+build
+docker

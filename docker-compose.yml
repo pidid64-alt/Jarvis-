@@ -1,0 +1,21 @@
+# «Джарвис» — запуск в Docker (когда появится сервер).
+# Перед запуском: создайте .env рядом с этим файлом (cp .env.example .env).
+#
+#   docker compose build
+#   docker compose run --rm jarvis tools          # список инструментов
+#   docker compose run --rm jarvis mcp list       # статусы MCP-серверов
+#   docker compose run --rm jarvis chat           # интерактивный чат
+#
+services:
+  jarvis:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: .env
+    volumes:
+      # Состояние ассистента: БД, сессии Telegram, журнал.
+      - ./data:/app/data
+      # Конфиги правятся на хосте; mcp_servers.yaml поддерживает reload.
+      - ./config:/app/config
+    stdin_open: true
+    tty: true

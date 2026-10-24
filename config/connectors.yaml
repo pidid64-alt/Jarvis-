@@ -1,0 +1,7 @@
+# Коннекторы мессенджеров/соцсетей.
+
+telegram:
+  enabled: true
+  session_file: data/sessions/telegram.session
+  mode: read_only        # MVP: только чтение. Варианты будущего: draft | auto
+  allowed_chats: []      # задел для режимов draft/auto (этап 2)

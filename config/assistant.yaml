@@ -1,0 +1,27 @@
+# Основные настройки ассистента.
+
+agent:
+  max_steps: 12          # максимум вызовов инструментов на один запрос
+  temperature: 0.3
+  max_tokens: 700        # бесплатный тариф Groq: лимит 1000 токенов ответа в минуту
+  recent_messages: 12    # сколько сообщений диалога держать в контексте
+  recall_top_k: 5        # сколько фактов памяти подгружать в промпт
+
+web:
+  user_agent: "Mozilla/5.0 (compatible; JarvisAssistant/0.1; +personal)"
+  respect_robots: true   # соблюдать robots.txt
+  rate_limit_seconds: 1.5  # пауза между запросами на один домен
+  cache_ttl_seconds: 86400 # кеш страниц: сутки
+  max_content_chars: 12000 # обрезка содержимого страницы для модели
+  request_timeout: 20
+
+memory:
+  vectors_enabled: true  # локальные эмбеддинги (fastembed); при false — только полнотекстовый поиск
+
+approvals:
+  # Автоматически разрешённые исходящие действия (БЕЗ подтверждения).
+  # Осторожно: только для инструментов с side_effect=outbound и явно
+  # разрешённых чатов. Пример:
+  #   - tool: telegram_send_message   # появится на этапе 2
+  #     chat_id: "123456789"
+  auto: []
