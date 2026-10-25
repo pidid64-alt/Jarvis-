@@ -26,9 +26,10 @@ from jarvis.connectors.base import ConnectorError
 
 log = logging.getLogger("jarvis.google")
 
-# Только чтение — принцип минимальных прав.
+# Чтение везде; отправка — только почта (принцип минимальных прав).
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/documents.readonly",
     "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
@@ -307,3 +308,30 @@ class GoogleOAuthConnector:
 
     async def read_message(self, uid: str) -> str:
         return await asyncio.to_thread(self.read_sync, uid)
+
+    # ---------- отправка (этап 2.6: письма с подтверждением) ----------
+
+    @staticmethod
+    def build_raw_email(to: str, subject: str, body: str) -> str:
+        """Собирает MIME-письмо и кодирует в base64url для Gmail API."""
+        from email.message import EmailMessage
+
+        message = EmailMessage()
+        message["To"] = to
+        message["Subject"] = subject
+        message.set_content(body)
+        return base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+    def send_sync(self, to: str, subject: str, body: str) -> str:
+        raw = self.build_raw_email(to, subject, body)
+        sent = (
+            self._service("gmail", "v1")
+            .users()
+            .messages()
+            .send(userId="me", body={"raw": raw})
+            .execute()
+        )
+        return f"Письмо отправлено (id={sent.get('id')}) на {to}: «{subject}»."
+
+    async def send_message(self, to: str, subject: str, body: str) -> str:
+        return await asyncio.to_thread(self.send_sync, to, subject, body)

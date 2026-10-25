@@ -10,7 +10,7 @@ from jarvis.connectors.base import ConnectorError
 from jarvis.core.tools.base import Tool, ToolResult
 
 
-def create_tools(connector) -> list[Tool]:
+def create_tools(connector, allow_send: bool = False) -> list[Tool]:
     async def gmail_unread(args: dict) -> ToolResult:
         try:
             result = await connector.unread_summary(limit_dialogs=int(args.get("limit", 20)))
@@ -38,7 +38,27 @@ def create_tools(connector) -> list[Tool]:
             return ToolResult(output=f"Ошибка Gmail: {e}")
         return ToolResult(output=result, untrusted=True)
 
-    return [
+    async def gmail_send(args: dict) -> ToolResult:
+        to = str(args.get("to", "")).strip()
+        subject = str(args.get("subject", "(без темы)")).strip()
+        body = str(args.get("body", "")).strip()
+        if not to or not body:
+            return ToolResult(output="Ошибка: нужны to и body.")
+        try:
+            result = await connector.send_message(to, subject, body)
+        except ConnectorError as e:
+            return ToolResult(output=f"Ошибка Gmail: {e}")
+        except Exception as e:
+            detail = str(e)
+            if "insufficient" in detail.lower() or "permission" in detail.lower():
+                return ToolResult(
+                    output="Нет права отправки: выполните повторный вход `jarvis google login` "
+                    "(добавлен скоуп gmail.send)."
+                )
+            return ToolResult(output=f"Не удалось отправить письмо: {detail[:300]}")
+        return ToolResult(output=result)
+
+    tools = [
         Tool(
             name="gmail_unread",
             description="Непрочитанные письма Gmail: отправитель, тема, кусок текста и uid.",
@@ -84,3 +104,30 @@ def create_tools(connector) -> list[Tool]:
             source="connector:gmail",
         ),
     ]
+
+    # Отправка — только когда бэкенд OAuth и режим не read_only.
+    # Каждое письмо проходит гейт подтверждения (кнопки в боте).
+    if allow_send:
+        tools.append(
+            Tool(
+                name="gmail_send",
+                description=(
+                    "Отправить письмо с адреса пользователя (Gmail). "
+                    "Требует подтверждения пользователем перед отправкой."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "to": {"type": "string", "description": "Адрес получателя"},
+                        "subject": {"type": "string", "description": "Тема письма"},
+                        "body": {"type": "string", "description": "Текст письма"},
+                    },
+                    "required": ["to", "body"],
+                },
+                handler=gmail_send,
+                side_effect="outbound",
+                timeout=90.0,
+                source="connector:gmail",
+            )
+        )
+    return tools

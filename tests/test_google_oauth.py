@@ -11,10 +11,33 @@ from jarvis.connectors.google_oauth import (
 )
 
 
-def test_scopes_are_read_only():
-    # Принцип минимальных прав: все скоупы только на чтение.
-    assert all(scope.endswith(".readonly") for scope in SCOPES)
-    assert len(SCOPES) == 4  # gmail, docs, sheets, drive
+def test_scopes_minimal_privilege():
+    # Чтение везде + отправка только почты; никаких full-access/destructive скоупов.
+    assert len(SCOPES) == 5
+    read_only = [s for s in SCOPES if s.endswith(".readonly")]
+    assert len(read_only) == 4  # gmail, documents, spreadsheets, drive
+    assert "https://www.googleapis.com/auth/gmail.send" in SCOPES
+
+
+def test_build_raw_email():
+    import base64
+    from email import message_from_bytes
+    from email.header import decode_header
+
+    raw_b64 = GoogleOAuthConnector.build_raw_email(
+        "drug@example.com", "Встреча в кафе", "Привет! Давай в 18:00."
+    )
+    mime = message_from_bytes(base64.urlsafe_b64decode(raw_b64))
+    assert mime["To"] == "drug@example.com"
+    # Кирилличная тема кодируется RFC2047 — декодируем для сравнения.
+    subject = "".join(
+        part.decode(charset or "utf-8") if isinstance(part, bytes) else part
+        for part, charset in decode_header(mime["Subject"])
+    )
+    assert subject == "Встреча в кафе"
+    # Тело письма достаём через get_payload(decode=True).
+    body = mime.get_payload(decode=True).decode("utf-8")
+    assert "18:00" in body
 
 
 def test_doc_markdown_extraction():

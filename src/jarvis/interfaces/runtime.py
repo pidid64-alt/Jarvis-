@@ -141,7 +141,9 @@ async def build_runtime(
         else:
             log.warning("Gmail недоступен: %s", gmail_connector.problem)
     if gmail_service is not None:
-        for tool in gmail_tools.create_tools(gmail_service):
+        # Отправка писем: только OAuth-бэкенд и режим, отличный от read_only.
+        allow_gmail_send = gmail_service is google and ccfg.gmail.mode != "read_only"
+        for tool in gmail_tools.create_tools(gmail_service, allow_send=allow_gmail_send):
             registry.register(tool)
 
     # LLM (может отсутствовать для служебных команд: tools/mcp/fetch).

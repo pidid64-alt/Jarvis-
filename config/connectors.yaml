@@ -8,4 +8,5 @@ telegram:
 
 gmail:
   enabled: true
-  mode: read_only        # чтение писем по IMAP; отправка появится позже
+  mode: draft          # read_only — только чтение; draft — отправка писем
+                       # через подтверждение кнопками (кнопки ✅/❌ в боте)
