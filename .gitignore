@@ -1,23 +1,18 @@
-# Python: окружения и кеши
-.venv/
-venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-ruff_cache/
-dist/
-build/
-
-# Секреты и данные ассистента — никогда не коммитить
+# Секреты и данные пользователя — никогда не коммитить
 .env
 data/
 *.session
 *.session-journal
 
-# Логи
-*.log
+# OAuth-ключи Google (Cloud Console) — секреты
+credentials.json
+client_secret*.json
 
-# Тяжёлые артефакты старой версии (jarvis-legacy): сборки whisper
-whisper.cpp/
-whisper-win/
-whisper-win.zip
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+ruff_cache/
+dist/
+build/

@@ -3,11 +3,11 @@
 import email
 
 import pytest
-from jarvis.core.tools.builtin.documents import _docx_text, _pdf_text, _xlsx_text
 
 from jarvis.config import Settings
 from jarvis.connectors.gmail_imap import GmailImapConnector, _body_text, _format_message
 from jarvis.core.tools.builtin.apps import _normalize
+from jarvis.core.tools.builtin.documents import _docx_text, _pdf_text, _xlsx_text
 
 
 @pytest.fixture

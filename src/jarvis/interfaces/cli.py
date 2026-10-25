@@ -616,6 +616,61 @@ async def _style_delete(example_id: int) -> None:
         await shutdown_runtime(rt)
 
 
+# ============================ GOOGLE (OAuth) ============================
+
+
+google_app = typer.Typer(help="Google: OAuth-вход (Gmail, Docs, Sheets, Drive)")
+app.add_typer(google_app, name="google")
+
+
+@google_app.command("login")
+def google_login():
+    """Вход в Google через браузер (как у Claude). Нужен credentials.json."""
+    _setup_stdio()
+    from pathlib import Path
+
+    from jarvis.connectors.base import ConnectorError
+    from jarvis.connectors.google_oauth import GoogleOAuthConnector
+
+    connector = GoogleOAuthConnector(Path("credentials.json"), Path("data/google_token.json"))
+    if not connector.credentials_configured:
+        console.print("[red]Нет файла credentials.json в корне проекта.[/]")
+        console.print(
+            "Как получить (5 минут):\n"
+            "1) console.cloud.google.com → создать проект\n"
+            "2) APIs & Services → Library → включить: Gmail API, Google Docs API,\n"
+            "   Google Sheets API, Google Drive API\n"
+            "3) APIs & Services → OAuth consent screen → External → добавить себя\n"
+            "   в Test users\n"
+            "4) Credentials → Create credentials → OAuth client ID → Desktop app\n"
+            "5) Скачать JSON → переименовать в credentials.json → положить сюда\n"
+            "6) снова `jarvis google login` — откроется браузер, нажмите «Разрешить»"
+        )
+        raise typer.Exit(1)
+    console.print("Открываю браузер для входа в Google… (разрешите доступ и вернитесь сюда)")
+    try:
+        message = connector.login_interactive()
+    except ConnectorError as e:
+        console.print(f"[red]Вход не удался:[/] {e}")
+        raise typer.Exit(1)
+    console.print(f"[green]{message}[/]")
+
+
+@google_app.command("status")
+def google_status():
+    """Состояние Google-интеграции."""
+    _setup_stdio()
+    from pathlib import Path
+
+    from jarvis.connectors.google_oauth import GoogleOAuthConnector
+
+    connector = GoogleOAuthConnector(Path("credentials.json"), Path("data/google_token.json"))
+    if connector.authorized:
+        console.print("[green]Google: вход выполнен[/] — Gmail, Docs, Sheets, Drive доступны (только чтение).")
+    else:
+        console.print(f"[yellow]Google не активен:[/] {connector.problem_text()}")
+
+
 # =============================== АУДИТ ===============================
 
 

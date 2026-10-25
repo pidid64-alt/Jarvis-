@@ -1,13 +1,16 @@
-"""Инструменты Gmail (IMAP, только чтение): непрочитанные, поиск, открыть письмо."""
+"""Инструменты Gmail: непрочитанные, поиск, открыть письмо.
+
+Бэкенд выбирается в runtime: Google OAuth (Gmail API) либо IMAP с паролем
+приложения — у обоих одинаковые методы unread_summary/search_messages/read_message.
+"""
 
 from __future__ import annotations
 
 from jarvis.connectors.base import ConnectorError
-from jarvis.connectors.gmail_imap import GmailImapConnector
 from jarvis.core.tools.base import Tool, ToolResult
 
 
-def create_tools(connector: GmailImapConnector) -> list[Tool]:
+def create_tools(connector) -> list[Tool]:
     async def gmail_unread(args: dict) -> ToolResult:
         try:
             result = await connector.unread_summary(limit_dialogs=int(args.get("limit", 20)))

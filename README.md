@@ -27,6 +27,10 @@ Telegram от вашего юзер-аккаунта (режим «только 
   (`open_app`, `close_app` — закрытие только после подтверждения, `list_apps`).
 - **Gmail (IMAP, только чтение)**: непрочитанные, поиск, открыть письмо —
   по паролю приложения Google (`.env`: `JARVIS_GMAIL_USER`, `JARVIS_GMAIL_APP_PASSWORD`).
+- **Google через OAuth** (как интеграции у Claude): один вход в браузере —
+  и работают `google_find_files` (Drive), `google_read_doc` (Docs),
+  `google_read_sheet` (Sheets) и Gmail через официальный API (только чтение).
+  Настройка: `credentials.json` в корень проекта → `uv run jarvis google login`.
 - **Безопасность**: исходящие действия — только после подтверждения; внешний контент
   всегда в рамке `<untrusted>` (защита от prompt injection); аудит всех действий
   (`jarvis audit`); секреты только в `.env`.

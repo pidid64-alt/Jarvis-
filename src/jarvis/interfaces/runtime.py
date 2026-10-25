@@ -14,6 +14,7 @@ from jarvis.config import (
     load_connectors_config,
 )
 from jarvis.connectors.gmail_imap import GmailImapConnector
+from jarvis.connectors.google_oauth import GoogleOAuthConnector
 from jarvis.connectors.telegram_user import TelegramUserConnector
 from jarvis.core.agent import Agent
 from jarvis.core.audit import AuditLog
@@ -22,6 +23,7 @@ from jarvis.core.tools.base import Confirmer
 from jarvis.core.tools.builtin import apps as app_tools
 from jarvis.core.tools.builtin import documents as document_tools
 from jarvis.core.tools.builtin import gmail as gmail_tools
+from jarvis.core.tools.builtin import google as google_tools
 from jarvis.core.tools.builtin import memory as memory_tools
 from jarvis.core.tools.builtin import reminders as reminder_tools
 from jarvis.core.tools.builtin import style as style_tools
@@ -58,6 +60,7 @@ class Runtime:
     mcp: MCPManager | None
     telegram: TelegramUserConnector | None
     gmail: GmailImapConnector | None
+    google: GoogleOAuthConnector | None
     agent: Agent | None
     scheduler: Scheduler | None
 
@@ -112,18 +115,34 @@ async def build_runtime(
         else:
             log.warning("Telegram недоступен: %s", connector.problem)
 
-    # Gmail (IMAP): работает без OAuth — нужен пароль приложения в .env.
+    # Google (OAuth): Gmail API + Docs + Sheets + Drive — как интеграции у Claude.
+    google: GoogleOAuthConnector | None = None
+    google = GoogleOAuthConnector(
+        credentials_path=Path("credentials.json"),
+        token_path=Path(settings.data_dir) / "google_token.json",
+    )
+    gmail_service = None
+    if google.authorized:
+        gmail_service = google  # Gmail через официальный API
+        for tool in google_tools.create_tools(google):
+            registry.register(tool)
+    else:
+        log.info("Google OAuth не активен: %s", google.problem_text())
+
+    # Gmail по IMAP — фолбек, если OAuth не настроен.
     gmail: GmailImapConnector | None = None
-    if with_telegram and ccfg.gmail.enabled:
+    if gmail_service is None and with_telegram and ccfg.gmail.enabled:
         gmail_connector = GmailImapConnector(
             settings.gmail_user, settings.gmail_app_password, enabled=ccfg.gmail.enabled
         )
         if await gmail_connector.start():
             gmail = gmail_connector
-            for tool in gmail_tools.create_tools(gmail_connector):
-                registry.register(tool)
+            gmail_service = gmail_connector
         else:
             log.warning("Gmail недоступен: %s", gmail_connector.problem)
+    if gmail_service is not None:
+        for tool in gmail_tools.create_tools(gmail_service):
+            registry.register(tool)
 
     # LLM (может отсутствовать для служебных команд: tools/mcp/fetch).
     llm: LLMProvider | None = None
@@ -173,6 +192,7 @@ async def build_runtime(
         mcp=mcp,
         telegram=telegram,
         gmail=gmail,
+        google=google,
         agent=agent,
         scheduler=scheduler,
     )
