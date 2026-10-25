@@ -7,8 +7,9 @@ Telegram от вашего юзер-аккаунта (режим «только 
 ## Что уже умеет MVP
 
 - **Агентное ядро**: цикл «план → действие → наблюдение», нативный function calling,
-  лимит шагов, ретраи. Провайдеры модели: OpenAI-совместимый API (OpenRouter, Groq,
-  Ollama — по одной строке в `.env`) и Anthropic Claude.
+  лимит шагов, ретраи. Провайдеры модели (все бесплатные, OpenAI-совместимые):
+  Groq, GitHub Models, Ollama Cloud (облачные glm/gpt-oss/deepseek без своей
+  видеокарты), локальная Ollama — переключение тремя строками в `.env`.
 - **MCP-клиент**: серверы stdio и HTTP/SSE из `config/mcp_servers.yaml`, allowlist
   инструментов, классы действий, подключение без перезапуска кода.
 - **Веб-чтение**: `read_url` — httpx + trafilatura → markdown; robots.txt, rate limit
