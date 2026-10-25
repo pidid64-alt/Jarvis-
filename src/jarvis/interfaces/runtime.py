@@ -19,6 +19,8 @@ from jarvis.core.audit import AuditLog
 from jarvis.core.llm.base import LLMProvider
 from jarvis.core.tools.base import Confirmer
 from jarvis.core.tools.builtin import memory as memory_tools
+from jarvis.core.tools.builtin import reminders as reminder_tools
+from jarvis.core.tools.builtin import style as style_tools
 from jarvis.core.tools.builtin import telegram as telegram_tools
 from jarvis.core.tools.builtin import web as web_tools
 from jarvis.core.tools.policy import Policy
@@ -27,6 +29,8 @@ from jarvis.mcp.manager import MCPManager
 from jarvis.memory.db import Database
 from jarvis.memory.store import MemoryStore
 from jarvis.memory.vector import EmbeddingEngine
+from jarvis.scheduler.notify import create_notifier
+from jarvis.scheduler.runner import Scheduler
 from jarvis.web.browser import BrowserReader
 from jarvis.web.fetcher import WebFetcher
 from jarvis.web.sites import generic
@@ -50,6 +54,7 @@ class Runtime:
     mcp: MCPManager | None
     telegram: TelegramUserConnector | None
     agent: Agent | None
+    scheduler: Scheduler | None
 
 
 async def build_runtime(
@@ -57,6 +62,7 @@ async def build_runtime(
     with_llm: bool = True,
     with_mcp: bool = True,
     with_telegram: bool = True,
+    with_scheduler: bool = True,
     confirmer: Confirmer | None = None,
 ) -> Runtime:
     settings = get_settings()
@@ -82,14 +88,17 @@ async def build_runtime(
         registry.register(tool)
     for tool in web_tools.create_tools(sites, acfg.web, browser):
         registry.register(tool)
+    for tool in reminder_tools.create_tools(memory):
+        registry.register(tool)
 
-    # Telegram: только чтение; при проблемах с ключами/сессией просто предупреждаем.
+    # Telegram: чтение всегда; отправка — только если коннектор не в read_only.
     telegram: TelegramUserConnector | None = None
     if with_telegram:
         connector = TelegramUserConnector(settings, ccfg.telegram)
         if await connector.start():
             telegram = connector
-            for tool in telegram_tools.create_tools(connector):
+            allow_send = ccfg.telegram.mode != "read_only"
+            for tool in telegram_tools.create_tools(connector, allow_send=allow_send):
                 registry.register(tool)
         else:
             log.warning("Telegram недоступен: %s", connector.problem)
@@ -108,6 +117,26 @@ async def build_runtime(
 
     agent = Agent(llm, registry, memory, acfg.agent, confirmer=confirmer) if llm else None
 
+    # Инструменты стиля/черновиков требуют llm — регистрируем после его создания.
+    if llm is not None:
+        for tool in style_tools.create_tools(memory, llm):
+            registry.register(tool)
+
+    # Планировщик: напоминания, брифинги, мониторинг (уведомления — в бота владельцу).
+    scheduler: Scheduler | None = None
+    if with_scheduler:
+        notifier = create_notifier(settings, Path(settings.data_dir))
+        scheduler = Scheduler(
+            memory,
+            notifier,
+            fetcher=fetcher,
+            sites=sites,
+            llm=llm,
+            telegram=telegram,
+            config=acfg.scheduler,
+            monitoring_path=Path(settings.config_dir) / "monitoring.yaml",
+        )
+
     return Runtime(
         settings=settings,
         config=acfg,
@@ -122,10 +151,13 @@ async def build_runtime(
         mcp=mcp,
         telegram=telegram,
         agent=agent,
+        scheduler=scheduler,
     )
 
 
 async def shutdown_runtime(rt: Runtime) -> None:
+    if rt.scheduler is not None:
+        await rt.scheduler.stop()
     if rt.mcp is not None:
         await rt.mcp.stop_all()
     if rt.telegram is not None:

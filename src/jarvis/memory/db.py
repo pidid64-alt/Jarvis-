@@ -60,6 +60,32 @@ CREATE TABLE IF NOT EXISTS audit_log (
     error TEXT,
     confirmed_by TEXT
 );
+
+-- Фоновые задания планировщика (этап 2): напоминания, брифинги, мониторинг.
+CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,             -- reminder | briefing | monitor
+    next_run REAL NOT NULL,         -- unix-время следующего запуска
+    interval_seconds INTEGER,       -- NULL = одноразовое задание
+    payload TEXT,                   -- JSON с параметрами (текст напоминания и т.п.)
+    created_at REAL NOT NULL
+);
+
+-- Примеры сообщений пользователя для стиля черновиков (few-shot).
+CREATE TABLE IF NOT EXISTS style_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    source TEXT DEFAULT 'manual',   -- manual | telegram_history | ...
+    created_at REAL NOT NULL
+);
+
+-- Состояние отслеживаемых страниц (детектор изменений).
+CREATE TABLE IF NOT EXISTS monitoring_state (
+    url TEXT PRIMARY KEY,
+    content_hash TEXT NOT NULL,
+    title TEXT,
+    changed_at REAL NOT NULL
+);
 """
 
 
@@ -82,6 +108,13 @@ class Database:
         cur = await self._conn.execute(sql, params)
         await self._conn.commit()
         return cur.lastrowid or 0
+
+    async def execute_rowcount(self, sql: str, params: tuple = ()) -> int:
+        """Для UPDATE/DELETE: сколько строк затронуто (база для атомарных «захватов»)."""
+        assert self._conn is not None, "connect() не вызван"
+        cur = await self._conn.execute(sql, params)
+        await self._conn.commit()
+        return cur.rowcount
 
     async def fetchone(self, sql: str, params: tuple = ()):
         assert self._conn is not None, "connect() не вызван"

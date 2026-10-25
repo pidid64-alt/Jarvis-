@@ -122,6 +122,20 @@ class TelegramUserConnector(Connector):
         found.sort(key=lambda pair: pair[1].date or 0, reverse=True)
         return self._format_search([m for _, m in found[:limit]], "последним 25 диалогам", names=[n for n, _ in found[:limit]])
 
+    # ---------- отправка (этап 2; включается сменой mode в connectors.yaml) ----------
+
+    async def send_message(self, chat: str, text: str) -> str:
+        """Отправка от имени юзер-аккаунта. Заблокирована в режиме read_only."""
+        if self._cfg.mode == "read_only":
+            raise ConnectorError(
+                "Коннектор в режиме read_only — отправка запрещена. "
+                "Смените mode на draft или auto в config/connectors.yaml."
+            )
+        client = self._require_client()
+        entity = await self._resolve_chat(chat)
+        message = await client.send_message(entity, text)
+        return f"Отправлено (id={message.id}) в чат {chat!r}."
+
     # ---------- служебное ----------
 
     @staticmethod

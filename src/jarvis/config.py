@@ -73,6 +73,22 @@ class MemoryConfig(BaseModel):
     vectors_enabled: bool = True
 
 
+class BriefingConfig(BaseModel):
+    enabled: bool = True
+    time: str = "08:00"  # местное время, ЧЧ:ММ
+
+
+class MonitoringConfig(BaseModel):
+    enabled: bool = True
+    interval_min: int = 30  # период проверки страниц, минуты
+
+
+class SchedulerConfig(BaseModel):
+    enabled: bool = True
+    briefing: BriefingConfig = BriefingConfig()
+    monitoring: MonitoringConfig = MonitoringConfig()
+
+
 class AutoRule(BaseModel):
     """Разрешение на исходящее действие без подтверждения."""
 
@@ -88,6 +104,7 @@ class AssistantConfig(BaseModel):
     agent: AgentConfig = AgentConfig()
     web: WebConfig = WebConfig()
     memory: MemoryConfig = MemoryConfig()
+    scheduler: SchedulerConfig = SchedulerConfig()
     approvals: ApprovalsConfig = ApprovalsConfig()
 
 

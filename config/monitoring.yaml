@@ -1,0 +1,10 @@
+# Страницы для мониторинга (этап 2). Период проверки — assistant.yaml → scheduler.monitoring.
+# При изменении содержимого Джарвис пришлёт уведомление в Telegram-бота.
+pages:
+  - url: https://example.com
+    note: "пример подписки (можно удалить)"
+  # - url: https://habr.com/ru/company/name/blog/
+  #   note: "блог компании N"
+
+# Задел на будущее: Telegram-каналы (потребуется вход юзер-аккаунта).
+channels: []

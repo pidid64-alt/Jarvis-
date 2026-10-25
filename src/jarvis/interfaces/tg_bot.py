@@ -131,6 +131,8 @@ async def run_bot() -> None:
 
     runtime = await build_runtime(with_llm=True)
     assert runtime.agent is not None
+    if runtime.scheduler is not None:
+        await runtime.scheduler.start()  # напоминания/брифинги/мониторинг живут вместе с ботом
     bot = Bot(token=settings.telegram_bot_token)
     owner = OwnerGuard(settings, Path(settings.data_dir))
     router = Router()

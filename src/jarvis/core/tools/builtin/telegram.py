@@ -1,4 +1,4 @@
-"""Инструменты Telegram (только чтение): непрочитанные, последние сообщения, поиск."""
+"""Инструменты Telegram: чтение (MVP) + отправка черновиков (этап 2, gated)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from jarvis.connectors.base import Connector, ConnectorError
 from jarvis.core.tools.base import Tool, ToolResult
 
 
-def create_tools(connector: Connector) -> list[Tool]:
+def create_tools(connector: Connector, allow_send: bool = False) -> list[Tool]:
     async def telegram_unread(args: dict) -> ToolResult:
         try:
             summary = await connector.unread_summary(limit_dialogs=int(args.get("limit_dialogs", 30)))
@@ -36,7 +36,18 @@ def create_tools(connector: Connector) -> list[Tool]:
             return ToolResult(output=f"Ошибка Telegram: {e}")
         return ToolResult(output=result, untrusted=True)
 
-    return [
+    async def telegram_send(args: dict) -> ToolResult:
+        chat = str(args.get("chat", "")).strip()
+        text = str(args.get("text", "")).strip()
+        if not chat or not text:
+            return ToolResult(output="Ошибка: нужны chat и text.")
+        try:
+            result = await connector.send_message(chat, text)
+        except ConnectorError as e:
+            return ToolResult(output=f"Ошибка Telegram: {e}")
+        return ToolResult(output=result)
+
+    tools = [
         Tool(
             name="telegram_unread",
             description="Сводка непрочитанных сообщений в Telegram (диалоги, счётчики, последние сообщения).",
@@ -86,3 +97,28 @@ def create_tools(connector: Connector) -> list[Tool]:
             source="connector:telegram",
         ),
     ]
+
+    # Отправка регистрируется только когда коннектор вышел из read-only.
+    if allow_send:
+        tools.append(
+            Tool(
+                name="telegram_send_message",
+                description=(
+                    "Отправить сообщение в Telegram от имени пользователя. "
+                    "Требует подтверждения (кроме чатов из approvals.auto)."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "chat": {"type": "string", "description": "Название диалога, @юзернейм или id"},
+                        "text": {"type": "string", "description": "Текст сообщения"},
+                    },
+                    "required": ["chat", "text"],
+                },
+                handler=telegram_send,
+                side_effect="outbound",
+                timeout=120.0,
+                source="connector:telegram",
+            )
+        )
+    return tools

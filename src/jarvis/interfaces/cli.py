@@ -441,6 +441,181 @@ async def _mcp_list() -> None:
         await shutdown_runtime(rt)
 
 
+# ============================ ЭТАП 2: ПЛАНИРОВЩИК ============================
+
+
+@app.command()
+def remind(
+    text: str,
+    in_minutes: float = typer.Option(None, "--in", help="Через сколько минут"),
+    at: str = typer.Option(None, "--at", help="Время 'ГГГГ-ММ-ДД ЧЧ:ММ'"),
+    daily: str = typer.Option(None, "--daily", help="Ежедневно в 'ЧЧ:ММ'"),
+):
+    """Создать напоминание (уведомление придёт в Telegram-бота)."""
+    _setup_stdio()
+    asyncio.run(_remind(text, in_minutes, at, daily))
+
+
+async def _remind(text: str, in_minutes: float | None, at: str | None, daily: str | None) -> None:
+    from jarvis.scheduler import runner
+
+    if in_minutes is not None:
+        next_run, repeat = runner.compute_in_minutes(in_minutes), None
+    elif at:
+        try:
+            next_run, repeat = runner.compute_at(at), None
+        except ValueError as e:
+            console.print(f"[red]{e}[/]")
+            raise typer.Exit(1)
+    elif daily:
+        next_run, repeat = runner.compute_daily(daily), runner._DAY_SECONDS
+    else:
+        console.print("Укажи время: --in 30, --at '2026-10-26 18:00' или --daily '09:00'")
+        raise typer.Exit(1)
+    rt = await _build(with_llm=False, with_mcp=False, with_telegram=False, with_scheduler=False)
+    try:
+        from datetime import datetime
+
+        job_id = await rt.memory.add_job("reminder", next_run, interval_seconds=repeat, payload={"text": text})
+        console.print(f"[green]Напоминание создано (id={job_id})[/]: {datetime.fromtimestamp(next_run):%d.%m.%Y %H:%M} — {text}")
+        console.print("Уведомление придёт в Telegram-бота (запусти `jarvis telegram bot` или `jarvis scheduler`).")
+    finally:
+        await shutdown_runtime(rt)
+
+
+@app.command()
+def jobs():
+    """Все задания планировщика."""
+    _setup_stdio()
+    asyncio.run(_jobs())
+
+
+async def _jobs() -> None:
+    from datetime import datetime
+
+    rt = await _build(with_llm=False, with_mcp=False, with_telegram=False, with_scheduler=False)
+    try:
+        all_jobs = await rt.memory.list_jobs()
+        if not all_jobs:
+            console.print("Заданий нет.")
+            return
+        table = Table(title=f"Задания планировщика ({len(all_jobs)})")
+        for col in ("id", "Тип", "Следующий запуск", "Повтор", "Данные"):
+            table.add_column(col)
+        for j in all_jobs:
+            table.add_row(
+                str(j["id"]),
+                j["kind"],
+                datetime.fromtimestamp(j["next_run"]).strftime("%d.%m %H:%M"),
+                "ежедневно" if j["interval_seconds"] == 86400 else ("каждые %s мин" % (j["interval_seconds"] // 60) if j["interval_seconds"] else "—"),
+                str(j["payload"].get("text", ""))[:60],
+            )
+        console.print(table)
+    finally:
+        await shutdown_runtime(rt)
+
+
+@app.command()
+def briefing():
+    """Показать утренний брифинг прямо сейчас."""
+    _setup_stdio()
+    asyncio.run(_briefing())
+
+
+async def _briefing() -> None:
+    rt = await _build(with_llm=False, with_mcp=False)
+    try:
+        if rt.scheduler is None:
+            console.print("[red]Планировщик отключён в конфиге.[/]")
+            raise typer.Exit(1)
+        console.print(Panel(await rt.scheduler.compose_briefing(), title="☕ Брифинг"))
+    finally:
+        await shutdown_runtime(rt)
+
+
+@app.command()
+def scheduler():
+    """Запустить планировщик без бота (напоминания/брифинги/мониторинг)."""
+    _setup_stdio()
+    asyncio.run(_scheduler())
+
+
+async def _scheduler() -> None:
+    rt = await _build(with_llm=False)
+    try:
+        if rt.scheduler is None:
+            console.print("[red]Планировщик отключён в assistant.yaml.[/]")
+            raise typer.Exit(1)
+        await rt.scheduler.start()
+        console.print("[green]Планировщик работает[/] (Ctrl+C — остановить)")
+        import asyncio as aio
+
+        await aio.Event().wait()  # спим вечно; выход по Ctrl+C
+    except KeyboardInterrupt:
+        pass
+    finally:
+        await shutdown_runtime(rt)
+
+
+# ============================ ЭТАП 2: СТИЛЬ ============================
+
+
+style_app = typer.Typer(help="Примеры твоих сообщений для черновиков в твоём стиле")
+app.add_typer(style_app, name="style")
+
+
+@style_app.command("add")
+def style_add(text: str):
+    """Добавить пример своего сообщения (для few-shot стиля)."""
+    _setup_stdio()
+    asyncio.run(_style_add(text))
+
+
+async def _style_add(text: str) -> None:
+    rt = await _build(with_llm=False, with_mcp=False, with_telegram=False, with_scheduler=False)
+    try:
+        example_id = await rt.memory.add_style_example(text)
+        console.print(f"[green]Сохранён пример стиля (id={example_id}).[/]")
+    finally:
+        await shutdown_runtime(rt)
+
+
+@style_app.command("list")
+def style_list():
+    """Все примеры стиля."""
+    _setup_stdio()
+    asyncio.run(_style_list())
+
+
+async def _style_list() -> None:
+    rt = await _build(with_llm=False, with_mcp=False, with_telegram=False, with_scheduler=False)
+    try:
+        examples = await rt.memory.list_style_examples()
+        if not examples:
+            console.print("Примеров стиля пока нет — добавь: jarvis style add \"твоё типичное сообщение\"")
+            return
+        for e in examples:
+            console.print(f"[dim]id={e['id']}[/] {e['text'][:160]}")
+    finally:
+        await shutdown_runtime(rt)
+
+
+@style_app.command("delete")
+def style_delete(example_id: int):
+    """Удалить пример стиля по id."""
+    _setup_stdio()
+    asyncio.run(_style_delete(example_id))
+
+
+async def _style_delete(example_id: int) -> None:
+    rt = await _build(with_llm=False, with_mcp=False, with_telegram=False, with_scheduler=False)
+    try:
+        await rt.memory.delete_style_example(example_id)
+        console.print(f"[green]Пример {example_id} удалён.[/]")
+    finally:
+        await shutdown_runtime(rt)
+
+
 # =============================== АУДИТ ===============================
 
 

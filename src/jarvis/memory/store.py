@@ -206,3 +206,89 @@ class MemoryStore:
 
     async def clear_dialog(self, session_id: str) -> None:
         await self._db.execute("DELETE FROM dialogs WHERE session_id = ?", (session_id,))
+
+    # ---------- этап 2: стиль, задания планировщика, мониторинг ----------
+
+    async def add_style_example(self, text: str, source: str = "manual") -> int:
+        return await self._db.execute(
+            "INSERT INTO style_examples (text, source, created_at) VALUES (?, ?, ?)",
+            (text, source, time.time()),
+        )
+
+    async def list_style_examples(self, limit: int = 50) -> list[dict]:
+        rows = await self._db.fetchall(
+            "SELECT id, text, source, created_at FROM style_examples ORDER BY id DESC LIMIT ?", (limit,)
+        )
+        return [dict(r) for r in rows]
+
+    async def delete_style_example(self, example_id: int) -> None:
+        await self._db.execute("DELETE FROM style_examples WHERE id = ?", (example_id,))
+
+    async def add_job(self, kind: str, next_run: float, interval_seconds: int | None = None, payload: dict | None = None) -> int:
+        return await self._db.execute(
+            "INSERT INTO jobs (kind, next_run, interval_seconds, payload, created_at) VALUES (?, ?, ?, ?, ?)",
+            (kind, next_run, interval_seconds, json.dumps(payload, ensure_ascii=False) if payload else None, time.time()),
+        )
+
+    async def due_jobs(self, now: float) -> list[dict]:
+        rows = await self._db.fetchall(
+            "SELECT id, kind, next_run, interval_seconds, payload FROM jobs WHERE next_run <= ? ORDER BY next_run",
+            (now,),
+        )
+        result = []
+        for r in rows:
+            job = dict(r)
+            job["payload"] = json.loads(job["payload"]) if job["payload"] else {}
+            result.append(job)
+        return result
+
+    async def claim_job(self, job_id: int, interval_seconds: int | None, now: float) -> bool:
+        """Забирает задание на исполнение: повторяющее переносится вперёд,
+        одноразовое удаляется. False — задание уже забрал другой процесс."""
+        if interval_seconds:
+            rowcount = await self._db.execute_rowcount(
+                "UPDATE jobs SET next_run = ? WHERE id = ? AND next_run <= ?",
+                (now + interval_seconds, job_id, now),
+            )
+        else:
+            rowcount = await self._db.execute_rowcount(
+                "DELETE FROM jobs WHERE id = ? AND next_run <= ?", (job_id, now)
+            )
+        return rowcount > 0
+
+    async def list_jobs(self) -> list[dict]:
+        rows = await self._db.fetchall(
+            "SELECT id, kind, next_run, interval_seconds, payload FROM jobs ORDER BY next_run"
+        )
+        result = []
+        for r in rows:
+            job = dict(r)
+            job["payload"] = json.loads(job["payload"]) if job["payload"] else {}
+            result.append(job)
+        return result
+
+    async def delete_job(self, job_id: int) -> None:
+        await self._db.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+
+    async def job_exists(self, kind: str) -> bool:
+        row = await self._db.fetchone("SELECT 1 FROM jobs WHERE kind = ? LIMIT 1", (kind,))
+        return row is not None
+
+    async def get_monitor_state(self, url: str) -> dict | None:
+        row = await self._db.fetchone(
+            "SELECT content_hash, title, changed_at FROM monitoring_state WHERE url = ?", (url,)
+        )
+        return dict(row) if row else None
+
+    async def set_monitor_state(self, url: str, content_hash: str, title: str | None) -> None:
+        await self._db.execute(
+            "INSERT OR REPLACE INTO monitoring_state (url, content_hash, title, changed_at) VALUES (?, ?, ?, ?)",
+            (url, content_hash, title, time.time()),
+        )
+
+    async def recent_changes(self, since_seconds: float) -> list[dict]:
+        rows = await self._db.fetchall(
+            "SELECT url, title, changed_at FROM monitoring_state WHERE changed_at >= ? ORDER BY changed_at DESC",
+            (time.time() - since_seconds,),
+        )
+        return [dict(r) for r in rows]

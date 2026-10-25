@@ -18,6 +18,15 @@ web:
 memory:
   vectors_enabled: true  # локальные эмбеддинги (fastembed); при false — только полнотекстовый поиск
 
+scheduler:
+  enabled: true
+  briefing:
+    enabled: true
+    time: "08:00"        # местное время утреннего брифинга
+  monitoring:
+    enabled: true
+    interval_minutes: 30 # как часто проверять страницы из monitoring.yaml
+
 approvals:
   # Автоматически разрешённые исходящие действия (БЕЗ подтверждения).
   # Осторожно: только для инструментов с side_effect=outbound и явно
