@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # Telegram user_id владельца; если пусто — владелец определяется первым /start.
     telegram_owner_id: int | None = None
 
+    # Gmail по IMAP (пароль приложения Google).
+    gmail_user: str = ""
+    gmail_app_password: str = ""
+
     @field_validator("telegram_api_id", "telegram_owner_id", mode="before")
     @classmethod
     def _empty_int_to_none(cls, value):
@@ -117,8 +121,14 @@ class TelegramConnectorConfig(BaseModel):
     allowed_chats: list[str] = Field(default_factory=list)
 
 
+class GmailConnectorConfig(BaseModel):
+    enabled: bool = True
+    mode: str = "read_only"  # read_only | draft | auto (отправка — этап 3)
+
+
 class ConnectorsConfig(BaseModel):
     telegram: TelegramConnectorConfig = TelegramConnectorConfig()
+    gmail: GmailConnectorConfig = GmailConnectorConfig()
 
 
 # ---------- mcp_servers.yaml ----------

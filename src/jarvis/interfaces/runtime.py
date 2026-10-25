@@ -13,11 +13,15 @@ from jarvis.config import (
     load_assistant_config,
     load_connectors_config,
 )
+from jarvis.connectors.gmail_imap import GmailImapConnector
 from jarvis.connectors.telegram_user import TelegramUserConnector
 from jarvis.core.agent import Agent
 from jarvis.core.audit import AuditLog
 from jarvis.core.llm.base import LLMProvider
 from jarvis.core.tools.base import Confirmer
+from jarvis.core.tools.builtin import apps as app_tools
+from jarvis.core.tools.builtin import documents as document_tools
+from jarvis.core.tools.builtin import gmail as gmail_tools
 from jarvis.core.tools.builtin import memory as memory_tools
 from jarvis.core.tools.builtin import reminders as reminder_tools
 from jarvis.core.tools.builtin import style as style_tools
@@ -53,6 +57,7 @@ class Runtime:
     llm: LLMProvider | None
     mcp: MCPManager | None
     telegram: TelegramUserConnector | None
+    gmail: GmailImapConnector | None
     agent: Agent | None
     scheduler: Scheduler | None
 
@@ -88,6 +93,10 @@ async def build_runtime(
         registry.register(tool)
     for tool in web_tools.create_tools(sites, acfg.web, browser):
         registry.register(tool)
+    for tool in document_tools.create_tools(settings):
+        registry.register(tool)
+    for tool in app_tools.create_tools():
+        registry.register(tool)
     for tool in reminder_tools.create_tools(memory):
         registry.register(tool)
 
@@ -102,6 +111,19 @@ async def build_runtime(
                 registry.register(tool)
         else:
             log.warning("Telegram недоступен: %s", connector.problem)
+
+    # Gmail (IMAP): работает без OAuth — нужен пароль приложения в .env.
+    gmail: GmailImapConnector | None = None
+    if with_telegram and ccfg.gmail.enabled:
+        gmail_connector = GmailImapConnector(
+            settings.gmail_user, settings.gmail_app_password, enabled=ccfg.gmail.enabled
+        )
+        if await gmail_connector.start():
+            gmail = gmail_connector
+            for tool in gmail_tools.create_tools(gmail_connector):
+                registry.register(tool)
+        else:
+            log.warning("Gmail недоступен: %s", gmail_connector.problem)
 
     # LLM (может отсутствовать для служебных команд: tools/mcp/fetch).
     llm: LLMProvider | None = None
@@ -150,6 +172,7 @@ async def build_runtime(
         llm=llm,
         mcp=mcp,
         telegram=telegram,
+        gmail=gmail,
         agent=agent,
         scheduler=scheduler,
     )

@@ -5,3 +5,7 @@ telegram:
   session_file: data/sessions/telegram.session
   mode: read_only        # MVP: только чтение. Варианты будущего: draft | auto
   allowed_chats: []      # задел для режимов draft/auto (этап 2)
+
+gmail:
+  enabled: true
+  mode: read_only        # чтение писем по IMAP; отправка появится позже
