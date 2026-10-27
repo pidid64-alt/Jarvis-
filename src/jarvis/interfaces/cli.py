@@ -616,6 +616,36 @@ async def _style_delete(example_id: int) -> None:
         await shutdown_runtime(rt)
 
 
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", "--host", help="0.0.0.0 — открыть доступ с телефона в Wi-Fi"),
+    port: int = typer.Option(8080, "--port"),
+):
+    """Веб-интерфейс Джарвиса в браузере (http://127.0.0.1:8080)."""
+    _setup_stdio()
+    asyncio.run(_web(host, port))
+
+
+async def _web(host: str, port: int) -> None:
+    import uvicorn
+
+    rt = await _build(with_llm=True)
+    try:
+        if rt.scheduler is not None:
+            await rt.scheduler.start()  # напоминания/брифинги работают и здесь
+        from jarvis.interfaces.webui import create_app
+
+        app = create_app(rt)
+        console.print(f"[green]Веб-интерфейс запущен:[/] http://{host}:{port}")
+        if host == "0.0.0.0":
+            console.print("С телефона в той же Wi-Fi сети: http://<IP-этого-ПК>:8080")
+        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+        server = uvicorn.Server(config)
+        await server.serve()
+    finally:
+        await shutdown_runtime(rt)
+
+
 # ============================ GOOGLE (OAuth) ============================
 
 

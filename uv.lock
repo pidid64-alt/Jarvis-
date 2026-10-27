@@ -609,6 +609,23 @@ wheels = [
 ]
 
 [[package]]
+name = "fastapi"
+version = "0.162.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "opentelemetry-api" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/eb/2cf8c80abf09b2800aef0a83b41066fbfda8ee5495b7a08b9d1af40f7046/fastapi-0.162.0.tar.gz", hash = "sha256:6a22c1e2e6e32e0633ee7e170f00009a29b8228b16feb219ee42f32fd8d88a8f", size = 527867, upload-time = "2026-10-23T18:47:33.264Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/4f/3f2c25c9b43970b5e9a08beb5e04776247edea684ddc0930f4f02f0bb6cb/fastapi-0.162.0-py3-none-any.whl", hash = "sha256:3785963de305dd09912426cb81f2d230fce98ab3521cdfe97265c8d14983128c", size = 148912, upload-time = "2026-10-23T18:47:31.734Z" },
+]
+
+[[package]]
 name = "fastembed"
 version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1002,6 +1019,7 @@ dependencies = [
     { name = "aiogram" },
     { name = "aiolimiter" },
     { name = "aiosqlite" },
+    { name = "fastapi" },
     { name = "fastembed" },
     { name = "google-api-python-client" },
     { name = "google-auth" },
@@ -1020,6 +1038,7 @@ dependencies = [
     { name = "tenacity" },
     { name = "trafilatura" },
     { name = "typer" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -1035,6 +1054,7 @@ requires-dist = [
     { name = "aiogram", specifier = ">=3.31.0" },
     { name = "aiolimiter", specifier = ">=1.1" },
     { name = "aiosqlite", specifier = ">=0.20" },
+    { name = "fastapi", specifier = ">=0.162.0" },
     { name = "fastembed", specifier = ">=0.4" },
     { name = "google-api-python-client", specifier = ">=2.201.0" },
     { name = "google-auth", specifier = ">=2.62.0" },
@@ -1053,6 +1073,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=8.2" },
     { name = "trafilatura", specifier = ">=1.12" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 
 [package.metadata.requires-dev]
