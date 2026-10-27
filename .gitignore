@@ -16,3 +16,6 @@ __pycache__/
 ruff_cache/
 dist/
 build/
+
+# Electron GUI
+gui/node_modules/
