@@ -34,6 +34,10 @@ class Agent:
         self._cfg = config
         self._confirmer = confirmer
 
+    def set_llm(self, provider: LLMProvider) -> None:
+        """Горячая замена провайдера (смена модели из настроек GUI)."""
+        self._llm = provider
+
     async def handle(self, user_text: str, session_id: str = "cli-main") -> str:
         """Обрабатывает один запрос пользователя, возвращает финальный ответ."""
         history = await self._memory.recent_dialog(session_id, self._cfg.recent_messages)

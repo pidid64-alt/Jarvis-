@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -159,6 +160,33 @@ async def build_runtime(
         await mcp.start_all()
 
     agent = Agent(llm, registry, memory, acfg.agent, confirmer=confirmer) if llm else None
+
+    # Модель, выбранная в настройках GUI, переживает перезапуск: применяем
+    # сохранённый override поверх провайдера из .env (если он ещё доступен).
+    if agent is not None:
+        try:
+            saved = json.loads(
+                (Path(settings.data_dir) / "settings.json").read_text(encoding="utf-8")
+            )
+        except Exception:
+            saved = {}
+        if saved.get("llm_base_url") and saved.get("llm_model"):
+            try:
+                from jarvis.core.llm.openai_compat import OpenAICompatProvider
+
+                agent.set_llm(
+                    OpenAICompatProvider(
+                        base_url=saved["llm_base_url"],
+                        api_key=saved.get("llm_api_key") or settings.llm_api_key or "local",
+                        default_model=saved["llm_model"],
+                        timeout=settings.llm_timeout,
+                    )
+                )
+                log.info(
+                    "Модель из настроек: %s @ %s", saved["llm_model"], saved["llm_base_url"]
+                )
+            except Exception as e:
+                log.warning("Не удалось применить модель из настроек: %s", e)
 
     # Инструменты стиля/черновиков требуют llm — регистрируем после его создания.
     if llm is not None:

@@ -1,7 +1,8 @@
-"""Веб-интерфейс Джарвиса v2: FastAPI + SSE + самодостаточная страница.
+"""Веб-интерфейс Джарвиса v3: FastAPI + SSE + самодостаточная страница.
 
-Дизайн: тёмная «стеклянная» тема в стиле ИИ-ассистентов, анимированный
-реактор, живые статусы инструментов, markdown-ответы, подтверждения кнопками.
+Дизайн: тёмная «стеклянная» тема, живой фон, аватары, экран приветствия,
+панель настроек с горячей сменой модели (пресеты + свой эндпоинт),
+голосовые ответы и распознавание речи.
 
 Запуск: `jarvis web` → http://127.0.0.1:8080
        `jarvis web --host 0.0.0.0` → плюс доступ с телефона в той же Wi-Fi.
@@ -16,6 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
@@ -25,6 +27,45 @@ from jarvis.interfaces.runtime import Runtime
 log = logging.getLogger("jarvis.webui")
 
 _CONFIRM_TIMEOUT = 600.0
+
+# Пресеты провайдеров для переключения модели в настройках (все бесплатные).
+LLM_PRESETS = [
+    {
+        "id": "ollama-cloud",
+        "name": "Ollama Cloud — бесплатно",
+        "base_url": "https://ollama.com/v1",
+        "models": ["gpt-oss:20b-cloud", "gemma4:31b-cloud"],
+        "key_hint": "ключ: ollama.com → Settings → API keys",
+    },
+    {
+        "id": "groq",
+        "name": "Groq — быстро, бесплатно",
+        "base_url": "https://api.groq.com/openai/v1",
+        "models": ["qwen/qwen3.8-27b", "llama-3.3-70b-versatile"],
+        "key_hint": "ключ: console.groq.com → API Keys",
+    },
+    {
+        "id": "github",
+        "name": "GitHub Models — бесплатно",
+        "base_url": "https://models.github.ai/inference",
+        "models": ["openai/gpt-oss-120b", "openai/gpt-4.1-mini"],
+        "key_hint": "ключ: github.com/settings/tokens (право Models)",
+    },
+    {
+        "id": "local-8787",
+        "name": "Локальный сервер (kimi-web)",
+        "base_url": "http://127.0.0.1:8787/v1",
+        "models": ["kimi-web"],
+        "key_hint": "ваш локальный web2api-сервер, ключ не нужен",
+    },
+    {
+        "id": "local-ollama",
+        "name": "Локальная Ollama (офлайн)",
+        "base_url": "http://localhost:11434/v1",
+        "models": ["qwen3:1.7b", "qwen2.5:1.5b"],
+        "key_hint": "нужен запущенный ollama serve",
+    },
+]
 
 
 @dataclass
@@ -98,19 +139,30 @@ def _make_observer(hub: WebHub):
     return observer
 
 
+# ---------- настройки (data/settings.json) ----------
+
+_DEFAULT_SETTINGS = {
+    "tts_enabled": True,
+    "tts_rate": 185,
+    "voice_autosend": True,
+    "llm_base_url": "",
+    "llm_model": "",
+    "llm_api_key": "",
+}
+
+_ALLOWED_SETTINGS = set(_DEFAULT_SETTINGS)
+
+
 def _load_app_settings(data_dir: Path) -> dict:
-    """Пользовательские настройки интерфейса (голос и т.п.)."""
-    defaults = {"tts_enabled": True, "tts_rate": 185, "voice_autosend": True}
     try:
         stored = json.loads((Path(data_dir) / "settings.json").read_text(encoding="utf-8"))
-        return {**defaults, **stored}
+        return {**_DEFAULT_SETTINGS, **stored}
     except Exception:
-        return dict(defaults)
+        return dict(_DEFAULT_SETTINGS)
 
 
 def _save_app_settings(data_dir: Path, values: dict) -> dict:
-    allowed = {"tts_enabled", "tts_rate", "voice_autosend"}
-    clean = {k: v for k, v in values.items() if k in allowed}
+    clean = {k: v for k, v in values.items() if k in _ALLOWED_SETTINGS}
     merged = {**_load_app_settings(data_dir), **clean}
     Path(data_dir).mkdir(parents=True, exist_ok=True)
     (Path(data_dir) / "settings.json").write_text(
@@ -122,11 +174,25 @@ def _save_app_settings(data_dir: Path, values: dict) -> dict:
 def create_app(runtime: Runtime) -> FastAPI:
     app = FastAPI(title="Jarvis Web UI")
     hub = WebHub()
-    state = {"session": "web-main", "settings": _load_app_settings(runtime.settings.data_dir)}
+    state = {
+        "session": "web-main",
+        "settings": _load_app_settings(runtime.settings.data_dir),
+    }
 
     settings = runtime.settings
+
+    def _current_model() -> dict:
+        saved_base = state["settings"].get("llm_base_url")
+        saved_model = state["settings"].get("llm_model")
+        return {
+            "base_url": saved_base or settings.llm_base_url,
+            "model": saved_model or settings.llm_model,
+            "active_model": settings.llm_model,  # обновляется после смены
+            "has_key": bool(state["settings"].get("llm_api_key") or settings.llm_api_key),
+        }
+
     info = {
-        "model": settings.llm_model,
+        "model": _current_model()["model"],
         "provider": settings.llm_provider,
         "tools": len(runtime.registry.all()),
         "telegram": bool(runtime.telegram),
@@ -224,6 +290,72 @@ def create_app(runtime: Runtime) -> FastAPI:
         await hub.publish({"type": "settings", "settings": state["settings"]})
         return JSONResponse({"status": "ok", "settings": state["settings"]})
 
+    @app.get("/api/model")
+    async def get_model() -> JSONResponse:
+        return JSONResponse({"presets": LLM_PRESETS, "current": _current_model()})
+
+    @app.post("/api/model")
+    async def post_model(request: Request) -> JSONResponse:
+        """Горячая смена модели: проверяем эндпоинт и подменяем провайдера."""
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse({"status": "error", "message": "некорректный JSON"}, status_code=400)
+        base_url = str(payload.get("base_url", "")).strip().rstrip("/")
+        model = str(payload.get("model", "")).strip()
+        api_key = str(payload.get("api_key", "")).strip()
+        if not base_url or not model:
+            return JSONResponse(
+                {"status": "error", "message": "нужны base_url и model"}, status_code=400
+            )
+        key = api_key or state["settings"].get("llm_api_key") or settings.llm_api_key or "local"
+
+        # Проверяем доступность эндпоинта (список моделей — дешёвый запрос).
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    f"{base_url}/models", headers={"Authorization": f"Bearer {key}"}
+                )
+            if resp.status_code == 401:
+                return JSONResponse(
+                    {"status": "error", "message": "ключ отклонён (401) — проверьте API key"},
+                    status_code=400,
+                )
+            if resp.status_code >= 400:
+                return JSONResponse(
+                    {
+                        "status": "error",
+                        "message": f"эндпоинт ответил {resp.status_code} — сервер доступен?",
+                    },
+                    status_code=400,
+                )
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": f"эндпоинт недоступен: {e}"}, status_code=400
+            )
+
+        from jarvis.core.llm.openai_compat import OpenAICompatProvider
+
+        new_provider = OpenAICompatProvider(
+            base_url=base_url, api_key=key, default_model=model, timeout=settings.llm_timeout
+        )
+        old = runtime.llm
+        runtime.llm = new_provider
+        assert runtime.agent is not None
+        runtime.agent.set_llm(new_provider)
+        info["model"] = model
+        state["settings"] = _save_app_settings(
+            runtime.settings.data_dir, {"llm_base_url": base_url, "llm_model": model, "llm_api_key": api_key}
+        )
+        if old is not None and old is not new_provider:
+            try:
+                await old.close()
+            except Exception:
+                log.debug("Старый провайдер не закрылся чисто", exc_info=True)
+        log.info("Модель переключена: %s @ %s", model, base_url)
+        await hub.publish({"type": "model_changed", "model": model})
+        return JSONResponse({"status": "ok", "model": model})
+
     @app.post("/api/voice")
     async def voice(request: Request) -> JSONResponse:
         """WAV (16 кГц моно 16 бит) в теле запроса → распознанный текст."""
@@ -250,10 +382,10 @@ INDEX_HTML = """<!doctype html>
 <title>Джарвис</title>
 <style>
   :root {
-    --bg: #05080f;
-    --glass: rgba(18, 28, 50, .55);
-    --glass-border: rgba(120, 170, 255, .14);
-    --text: #e3ecfb; --dim: #8291b8;
+    --bg: #04060d;
+    --glass: rgba(17, 27, 49, .55);
+    --glass-border: rgba(125, 175, 255, .16);
+    --text: #e6eefc; --dim: #8593b8;
     --accent: #3fd2ff; --accent2: #2b7fff;
     --ok: #3ddc84; --warn: #ffb454; --bad: #ff5d5d;
     --radius: 18px;
@@ -261,40 +393,42 @@ INDEX_HTML = """<!doctype html>
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
   body {
-    background:
-      radial-gradient(900px 500px at 15% -10%, rgba(43,127,255,.22), transparent 60%),
-      radial-gradient(900px 600px at 90% 110%, rgba(53,208,255,.12), transparent 60%),
-      var(--bg);
+    background: var(--bg);
     color: var(--text);
     font: 15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
     display: flex; justify-content: center; overflow: hidden;
   }
+  /* живой фон: дрейфующие световые пятна */
+  .blob { position: fixed; border-radius: 50%; filter: blur(90px); opacity: .5; z-index: 0;
+          animation: drift 26s ease-in-out infinite alternate; }
+  .blob.b1 { width: 480px; height: 480px; background: #1d4ed8; top: -160px; left: -120px; }
+  .blob.b2 { width: 420px; height: 420px; background: #0e7490; bottom: -140px; right: -100px; animation-delay: -13s; }
+  @keyframes drift { to { transform: translate(70px, 50px) scale(1.15); } }
+
   .app {
-    width: min(1100px, 100%); height: 100%;
-    display: grid; grid-template-columns: 260px 1fr; gap: 14px; padding: 14px;
+    position: relative; z-index: 1;
+    width: min(1120px, 100%); height: 100%;
+    display: grid; grid-template-columns: 270px 1fr; gap: 14px; padding: 14px;
   }
   .side { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
   .glass {
     background: var(--glass); border: 1px solid var(--glass-border);
-    border-radius: var(--radius); backdrop-filter: blur(18px);
-    box-shadow: 0 8px 32px rgba(0,0,0,.35);
+    border-radius: var(--radius); backdrop-filter: blur(20px);
+    box-shadow: 0 10px 40px rgba(0,0,0,.4);
   }
   .brand { padding: 18px; display: flex; align-items: center; gap: 14px; }
-  .orb-wrap { position: relative; width: 52px; height: 52px; flex-shrink: 0; }
+  .orb-wrap { position: relative; width: 54px; height: 54px; flex-shrink: 0; }
   .orb {
-    position: absolute; inset: 6px; border-radius: 50%;
+    position: absolute; inset: 7px; border-radius: 50%;
     background: radial-gradient(circle at 32% 28%, #b8f1ff, var(--accent2) 58%, #0a1a33);
-    box-shadow: 0 0 22px rgba(53,208,255,.6);
+    box-shadow: 0 0 24px rgba(53,208,255,.6);
     animation: pulse 3.2s ease-in-out infinite;
   }
-  .ring {
-    position: absolute; inset: 0; border-radius: 50%;
-    border: 1px solid rgba(53,208,255,.45);
-    animation: ripple 3.2s linear infinite;
-  }
+  .ring { position: absolute; inset: 0; border-radius: 50%;
+          border: 1px solid rgba(53,208,255,.45); animation: ripple 3.2s linear infinite; }
   .ring:nth-child(2) { animation-delay: 1.6s; }
-  @keyframes pulse { 50% { transform: scale(1.06); } }
-  @keyframes ripple { 0% { transform: scale(.7); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
+  @keyframes pulse { 50% { transform: scale(1.07); } }
+  @keyframes ripple { 0% { transform: scale(.7); opacity: .9; } 100% { transform: scale(1.4); opacity: 0; } }
   .brand h1 { font-size: 21px; letter-spacing: 4px; font-weight: 650; }
   .brand h1 b { color: var(--accent); font-weight: 650; }
   .brand small { color: var(--dim); font-size: 11px; letter-spacing: 1.5px; }
@@ -306,42 +440,66 @@ INDEX_HTML = """<!doctype html>
   .btn {
     width: 100%; margin-top: 4px; padding: 11px; border-radius: 12px; border: 1px solid var(--glass-border);
     background: rgba(53,208,255,.08); color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer;
-    transition: background .15s, border-color .15s;
+    transition: background .15s, border-color .15s, transform .1s;
   }
   .btn:hover { background: rgba(53,208,255,.16); border-color: rgba(53,208,255,.4); }
-  .side .spacer { flex: 1; }
+  .btn:active { transform: scale(.98); }
+  .spacer { flex: 1; }
   .foot { padding: 12px 16px; font-size: 11px; color: var(--dim); }
+
   .main { display: flex; flex-direction: column; min-height: 0; gap: 12px; }
-  #chat {
-    flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
-    padding: 20px; scroll-behavior: smooth;
-  }
+  #chat { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 20px; }
   #chat::-webkit-scrollbar { width: 8px; }
-  #chat::-webkit-scrollbar-thumb { background: rgba(120,170,255,.18); border-radius: 4px; }
+  #chat::-webkit-scrollbar-thumb { background: rgba(125,175,255,.18); border-radius: 4px; }
+
+  .welcome { margin: auto; text-align: center; padding: 20px; }
+  .welcome .big-orb {
+    width: 84px; height: 84px; margin: 0 auto 14px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 28%, #b8f1ff, var(--accent2) 58%, #0a1a33);
+    box-shadow: 0 0 46px rgba(53,208,255,.5); animation: pulse 3.2s ease-in-out infinite;
+  }
+  .welcome h2 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .welcome p { color: var(--dim); font-size: 13.5px; margin-bottom: 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .chip {
+    padding: 9px 14px; border-radius: 20px; border: 1px solid var(--glass-border);
+    background: rgba(53,208,255,.07); color: var(--text); font-size: 13px; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .chip:hover { background: rgba(53,208,255,.16); border-color: rgba(53,208,255,.4); }
+
+  .msg-row { display: flex; gap: 10px; align-items: flex-end; animation: slide .22s ease-out; }
+  .msg-row.user { flex-direction: row-reverse; }
+  @keyframes slide { from { opacity: 0; transform: translateY(8px); } }
+  .ava {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+  }
+  .ava.bot { background: radial-gradient(circle at 32% 28%, #b8f1ff, var(--accent2) 65%);
+             box-shadow: 0 0 12px rgba(53,208,255,.45); color: #04121f; }
+  .ava.me { background: linear-gradient(135deg, #2b6fe3, #2b9fff); color: #fff; }
   .bubble {
-    max-width: 78%; padding: 12px 16px; border-radius: 18px;
-    animation: slide .22s ease-out;
+    max-width: 74%; padding: 12px 16px; border-radius: 18px;
     word-break: break-word; white-space: pre-wrap;
   }
-  @keyframes slide { from { opacity: 0; transform: translateY(8px); } }
-  .user { align-self: flex-end; background: linear-gradient(135deg, #2b6fe3, #2b9fff); color: #fff;
-          border-radius: 18px 18px 6px 18px; }
-  .bot { align-self: flex-start; background: var(--glass); border: 1px solid var(--glass-border);
-         backdrop-filter: blur(18px); border-radius: 18px 18px 18px 6px; }
-  .bot b { color: var(--accent); } .bot code { font-family: Consolas, monospace; background: rgba(0,0,0,.35);
-         padding: 1px 6px; border-radius: 6px; font-size: 13px; color: #9fe9ff; }
+  .user .bubble { background: linear-gradient(135deg, #2b6fe3, #2b9fff); color: #fff;
+                  border-radius: 18px 18px 6px 18px; }
+  .bot-row .bubble { background: var(--glass); border: 1px solid var(--glass-border);
+                     backdrop-filter: blur(20px); border-radius: 18px 18px 18px 6px; }
+  .bot b { color: var(--accent); }
+  .bot code { font-family: Consolas, monospace; background: rgba(0,0,0,.35); padding: 1px 6px;
+              border-radius: 6px; font-size: 13px; color: #9fe9ff; }
   .event { align-self: center; font: 12px Consolas, monospace; color: var(--dim);
-           background: rgba(10,16,30,.5); border: 1px solid rgba(120,170,255,.08);
+           background: rgba(10,16,30,.55); border: 1px solid rgba(125,175,255,.09);
            padding: 4px 12px; border-radius: 20px; animation: slide .2s ease-out; }
   .event .ok { color: var(--ok); } .event .bad { color: var(--bad); }
-  .dots { align-self: flex-start; display: flex; gap: 5px; padding: 14px 16px; }
+  .dots { display: flex; gap: 5px; padding: 14px 16px; }
   .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: bounce 1.2s infinite; }
   .dots i:nth-child(2) { animation-delay: .18s; } .dots i:nth-child(3) { animation-delay: .36s; }
   @keyframes bounce { 30% { transform: translateY(-6px); opacity: .5; } }
-  .confirm {
-    align-self: stretch; background: rgba(255,180,84,.07); border: 1px solid rgba(255,180,84,.35);
-    border-radius: 14px; padding: 14px 16px; animation: slide .25s ease-out;
-  }
+
+  .confirm { align-self: stretch; background: rgba(255,180,84,.07); border: 1px solid rgba(255,180,84,.35);
+             border-radius: 14px; padding: 14px 16px; animation: slide .25s ease-out; }
   .confirm h3 { font-size: 13.5px; color: var(--warn); margin-bottom: 4px; }
   .confirm .why { font-size: 12.5px; color: var(--dim); }
   .confirm pre { font-size: 12px; color: var(--dim); background: rgba(0,0,0,.3); padding: 10px;
@@ -353,13 +511,21 @@ INDEX_HTML = """<!doctype html>
   .confirm .no { background: rgba(255,93,93,.12); color: var(--bad); border: 1px solid rgba(255,93,93,.4); }
   .confirm.done { opacity: .5; pointer-events: none; }
   .verdict { font-weight: 600; }
+
   footer { display: flex; gap: 10px; }
   #input {
     flex: 1; background: var(--glass); color: var(--text); border: 1px solid var(--glass-border);
-    border-radius: 16px; padding: 14px 18px; font: inherit; outline: none; backdrop-filter: blur(18px);
+    border-radius: 16px; padding: 14px 18px; font: inherit; outline: none; backdrop-filter: blur(20px);
     transition: border-color .15s, box-shadow .15s;
   }
   #input:focus { border-color: rgba(53,208,255,.5); box-shadow: 0 0 0 3px rgba(53,208,255,.12); }
+  .icon-btn {
+    width: 54px; border: 1px solid var(--glass-border); border-radius: 16px; cursor: pointer;
+    background: var(--glass); font-size: 20px; color: var(--text); transition: all .15s;
+  }
+  .icon-btn:hover { border-color: rgba(53,208,255,.5); }
+  #mic.rec { background: rgba(255,93,93,.2); border-color: var(--bad); animation: micpulse 1s infinite; }
+  @keyframes micpulse { 50% { box-shadow: 0 0 14px rgba(255,93,93,.5); } }
   #send {
     width: 54px; border: 0; border-radius: 16px; cursor: pointer; font-size: 20px;
     background: linear-gradient(135deg, var(--accent2), var(--accent)); color: #051220;
@@ -368,29 +534,41 @@ INDEX_HTML = """<!doctype html>
   #send:hover { filter: brightness(1.15); }
   #send:active { transform: scale(.95); }
   #send:disabled { opacity: .35; cursor: default; }
-  #mic {
-    width: 54px; border: 1px solid var(--glass-border); border-radius: 16px; cursor: pointer;
-    background: var(--glass); font-size: 20px; color: var(--text); transition: all .15s;
-  }
-  #mic:hover { border-color: rgba(53,208,255,.5); }
-  #mic.rec { background: rgba(255,93,93,.2); border-color: var(--bad); animation: micpulse 1s infinite; }
-  @keyframes micpulse { 50% { box-shadow: 0 0 14px rgba(255,93,93,.5); } }
-  .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex;
-                align-items: center; justify-content: center; z-index: 10; }
+
+  .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex;
+                align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(4px); }
   .modal-back.hidden { display: none; }
-  .modal { width: min(440px, 92vw); padding: 22px; }
-  .modal h3 { margin-bottom: 14px; color: var(--accent); }
-  .toggle { display: flex; align-items: center; gap: 10px; margin: 12px 0; font-size: 14px; }
-  .toggle input[type="range"] { flex: 1; accent-color: var(--accent); }
-  .modal-btns { display: flex; gap: 10px; margin-top: 16px; }
+  .modal { width: min(500px, 94vw); max-height: 88vh; overflow-y: auto; padding: 22px; }
+  .modal h3 { margin-bottom: 14px; color: var(--accent); font-size: 16px; }
+  .modal h4 { margin: 16px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--dim); }
+  .field { margin: 10px 0; }
+  .field label { display: block; font-size: 12.5px; color: var(--dim); margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; background: rgba(0,0,0,.3); color: var(--text); border: 1px solid var(--glass-border);
+    border-radius: 10px; padding: 10px 12px; font: inherit; outline: none;
+  }
+  .field input:focus, .field select:focus { border-color: rgba(53,208,255,.5); }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0; font-size: 14px; }
+  .switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; border-radius: 24px; background: rgba(125,175,255,.2);
+            transition: background .2s; cursor: pointer; }
+  .slider::before { content: ''; position: absolute; width: 18px; height: 18px; border-radius: 50%;
+                    left: 3px; top: 3px; background: #fff; transition: transform .2s; }
+  .switch input:checked + .slider { background: var(--accent2); }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
+  .modal-btns { display: flex; gap: 10px; margin-top: 18px; }
   .why { color: var(--dim); font-size: 12px; margin-top: 10px; }
+  .ok-note { color: var(--ok); font-size: 13px; margin-top: 10px; min-height: 18px; }
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
     .side { display: none; }
+    .bubble { max-width: 88%; }
   }
 </style>
 </head>
 <body>
+<div class="blob b1"></div><div class="blob b2"></div>
 <div class="app">
   <aside class="side">
     <div class="glass brand">
@@ -399,7 +577,7 @@ INDEX_HTML = """<!doctype html>
     </div>
     <div class="glass panel">
       <h2>Система</h2>
-      <div class="row"><span>Модель</span><span id="st-model">…</span></div>
+      <div class="row"><span>Модель</span><span id="st-model" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">…</span></div>
       <div class="row"><span>Инструменты</span><span id="st-tools">…</span></div>
       <div class="row"><span>Google</span><span id="st-google">…</span></div>
       <div class="row"><span>Telegram</span><span id="st-tg">…</span></div>
@@ -417,25 +595,54 @@ INDEX_HTML = """<!doctype html>
   </aside>
 
   <main class="main">
-    <div id="chat" class="glass"><div class="event">Спроси что угодно — инструменты подключены</div></div>
+    <div id="chat" class="glass">
+      <div class="welcome" id="welcome">
+        <div class="big-orb"></div>
+        <h2>Привет! Я Джарвис</h2>
+        <p>Читаю сайты, ищу в интернете, веду память, пишу письма,<br>напоминаю о делах и управляю программами</p>
+        <div class="chips">
+          <button class="chip">🔎 Найди в интернете…</button>
+          <button class="chip">📬 Что на почте?</button>
+          <button class="chip">⏰ Напомни через 30 минут…</button>
+          <button class="chip">📄 Открой блокнот</button>
+        </div>
+      </div>
+    </div>
     <footer>
-      <button id="mic" title="Голосовой ввод (нажми, говори, нажми ещё раз)">🎙</button>
-      <input id="input" placeholder="Напиши сообщение Джарвису…" autocomplete="off">
+      <button id="mic" class="icon-btn" title="Голосовой ввод: нажми, говори, нажми ещё раз">🎙</button>
+      <input id="input" placeholder="Напиши или скажи…" autocomplete="off">
       <button id="send">➤</button>
     </footer>
   </main>
+</div>
 
-  <div id="modal" class="modal-back hidden">
-    <div class="modal glass">
-      <h3>⚙️ Настройки</h3>
-      <label class="toggle"><input type="checkbox" id="set-tts"> Голосовые ответы (Джарвис говорит — голос Windows)</label>
-      <label class="toggle">Скорость речи <input type="range" id="set-rate" min="120" max="260" step="5"><span id="rate-val"></span></label>
-      <label class="toggle"><input type="checkbox" id="set-autosend"> Отправлять распознанную речь сразу</label>
-      <div class="modal-btns">
-        <button class="btn" id="set-save">Сохранить</button>
-        <button class="btn" id="set-close">Закрыть</button>
-      </div>
-      <div class="why" id="set-note"></div>
+<div id="modal" class="modal-back hidden">
+  <div class="modal glass">
+    <h3>⚙️ Настройки</h3>
+
+    <h4>Модель (смена без перезапуска)</h4>
+    <div class="field">
+      <label>Пресет</label>
+      <select id="m-preset"></select>
+    </div>
+    <div class="field"><label>Base URL</label><input id="m-url" placeholder="https://…/v1"></div>
+    <div class="field"><label>Модель</label><input id="m-model" placeholder="имя модели" list="m-models"><datalist id="m-models"></datalist></div>
+    <div class="field"><label>API-ключ (пусто = оставить прежний)</label><input id="m-key" type="password" placeholder="•••••"></div>
+    <div class="why" id="m-hint"></div>
+    <div class="btns"><button class="btn" id="m-apply">Применить модель</button></div>
+    <div class="ok-note" id="m-note"></div>
+
+    <h4>Голос</h4>
+    <div class="toggle"><span>Голосовые ответы</span>
+      <span class="switch"><input type="checkbox" id="set-tts"><span class="slider"></span></span></div>
+    <div class="toggle"><span>Скорость речи</span>
+      <span style="display:flex;align-items:center;gap:8px"><input type="range" id="set-rate" min="120" max="260" step="5" style="width:110px;accent-color:var(--accent)"><span id="rate-val"></span></span></div>
+    <div class="toggle"><span>Отправлять распознанную речь сразу</span>
+      <span class="switch"><input type="checkbox" id="set-autosend"><span class="slider"></span></span></div>
+
+    <div class="modal-btns">
+      <button class="btn" id="set-save">Сохранить голос</button>
+      <button class="btn" id="set-close">Закрыть</button>
     </div>
   </div>
 </div>
@@ -451,7 +658,6 @@ function esc(s) {
   d.textContent = s ?? '';
   return d.innerHTML;
 }
-// Мини-markdown для ответов: **жирный**, `код`, переносы строк.
 function md(text) {
   let html = esc(text);
   html = html.replace(/`([^`\\n]+)`/g, '<code>$1</code>');
@@ -465,11 +671,18 @@ function push(html, cls) {
   chat.scrollTop = chat.scrollHeight;
   return el;
 }
-const addMsg = (cls, text, isMd) => push(isMd ? md(text) : esc(text), 'bubble ' + cls);
+function hideWelcome() { document.getElementById('welcome')?.remove(); }
+const addMsg = (who, text, isMd) => {
+  hideWelcome();
+  const ava = who === 'user' ? '<div class="ava me">Я</div>' : '<div class="ava bot">🤖</div>';
+  push(ava + '<div class="bubble">' + (isMd ? md(text) : esc(text)) + '</div>',
+       'msg-row ' + (who === 'user' ? 'user' : 'bot-row'));
+};
 const addEvent = (html) => push(html, 'event');
-const dots = () => push('<i></i><i></i><i></i>', 'dots');
+const dots = () => { hideWelcome(); push('<i></i><i></i><i></i>', 'dots'); };
 
 const addConfirm = (c) => {
+  hideWelcome();
   const card = push(
     '<h3>⚠️ Подтвердите: ' + esc(c.tool) + '</h3>'
     + '<div class="why">' + esc(c.reason) + '</div>'
@@ -504,21 +717,25 @@ es.onmessage = (e) => {
   else if (ev.type === 'tool_error') addEvent('<span class="bad">✗ ' + esc(ev.tool) + ': ' + esc(ev.error || '') + '</span>');
   else if (ev.type === 'tool_denied') addEvent('<span class="bad">✗ ' + esc(ev.tool) + ' — отклонено</span>');
   else if (ev.type === 'confirm') addConfirm(ev);
-  else if (ev.type === 'reset') push('🧹 Контекст диалога очищен', 'event');
+  else if (ev.type === 'reset') { hideWelcome(); push('🧹 Контекст диалога очищен', 'event'); }
+  else if (ev.type === 'model_changed') addEvent('🔀 Модель переключена: <b>' + esc(ev.model) + '</b>');
 };
 
-fetch('/api/status').then(r => r.json()).then(s => {
-  document.getElementById('st-model').textContent = s.model || '—';
-  document.getElementById('st-tools').textContent = s.tools;
-  const mark = (id, on, label) => {
-    const el = document.getElementById(id);
-    el.textContent = on ? label : 'нет';
-    el.className = on ? 'on' : 'off';
-  };
-  mark('st-google', s.google, 'OAuth ✅');
-  mark('st-tg', s.telegram, 'подключён ✅');
-  mark('st-sched', s.scheduler, 'работает ✅');
-});
+function refreshStatus() {
+  fetch('/api/status').then(r => r.json()).then(s => {
+    document.getElementById('st-model').textContent = s.model || '—';
+    document.getElementById('st-tools').textContent = s.tools;
+    const mark = (id, on, label) => {
+      const el = document.getElementById(id);
+      el.textContent = on ? label : 'нет';
+      el.className = on ? 'on' : 'off';
+    };
+    mark('st-google', s.google, 'OAuth ✅');
+    mark('st-tg', s.telegram, 'подключён ✅');
+    mark('st-sched', s.scheduler, 'работает ✅');
+  });
+}
+refreshStatus();
 
 function setBusy(v) { busy = v; send.disabled = v; input.disabled = v; if (!v) input.focus(); }
 async function submit() {
@@ -535,19 +752,15 @@ async function submit() {
 send.onclick = submit;
 input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
 
-document.getElementById('reset').onclick = async () => {
-  await fetch('/api/reset', {method: 'POST'});
-};
-document.getElementById('unread').onclick = () => {
-  input.value = 'Что нового на почте?';
+document.getElementById('reset').onclick = async () => { await fetch('/api/reset', {method: 'POST'}); };
+document.getElementById('unread').onclick = () => { input.value = 'Что нового на почте?'; submit(); };
+document.getElementById('brief').onclick = () => { input.value = 'Сделай краткий обзор: что на почте и что запланировано?'; submit(); };
+document.querySelectorAll('.chip').forEach(ch => ch.onclick = () => {
+  input.value = ch.textContent.replace(/^[^ ]+ /, '');
   submit();
-};
-document.getElementById('brief').onclick = () => {
-  input.value = 'Сделай краткий обзор: что на почте и что запланировано?';
-  submit();
-};
+});
 
-/* ---------- голосовой ввод: микрофон → WAV 16 кГц → /api/voice ---------- */
+/* ---------- голосовой ввод ---------- */
 let media = null, processor = null, chunks = [], recording = false;
 const micBtn = document.getElementById('mic');
 
@@ -566,24 +779,19 @@ function encodeWav(samples, rate) {
   }
   return new Uint8Array(buf);
 }
-
 async function startRec() {
   const stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true}});
   const ctx = new AudioContext({sampleRate: 48000});
   const src = ctx.createMediaStreamSource(stream);
   processor = ctx.createScriptProcessor(4096, 1, 1);
   chunks = [];
-  processor.onaudioprocess = (e) => {
-    if (!recording) return;
-    chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-  };
+  processor.onaudioprocess = (e) => { if (recording) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
   src.connect(processor); processor.connect(ctx.destination);
   media = {stream, ctx};
   recording = true;
   micBtn.classList.add('rec');
   addEvent('🎙 Слушаю… (нажми ещё раз, чтобы закончить)');
 }
-
 async function stopRec() {
   recording = false;
   micBtn.classList.remove('rec');
@@ -593,13 +801,11 @@ async function stopRec() {
   let merged = new Float32Array(chunks.reduce((a, c) => a + c.length, 0));
   let off = 0;
   for (const c of chunks) { merged.set(c, off); off += c.length; }
-  // Даунсэмпл 48к → 16к (простое прореживание; для речи достаточно).
-  const ratio = Math.round(rate / 16000);
+  const ratio = Math.max(1, Math.round(rate / 16000));
   const small = new Float32Array(Math.floor(merged.length / ratio));
   for (let i = 0; i < small.length; i++) small[i] = merged[i * ratio];
   addEvent('Распознаю речь…');
-  const wav = encodeWav(small, 16000);
-  const r = await fetch('/api/voice', {method: 'POST', body: wav});
+  const r = await fetch('/api/voice', {method: 'POST', body: encodeWav(small, 16000)});
   const data = await r.json();
   if (data.status !== 'ok' || !data.text) {
     addEvent('<span class="bad">Речь не распознана' + (data.message ? ': ' + esc(data.message) : '') + '</span>');
@@ -610,7 +816,6 @@ async function stopRec() {
   const s = await (await fetch('/api/settings')).json();
   if (s.voice_autosend) submit(); else input.focus();
 }
-
 micBtn.onclick = async () => {
   if (busy) return;
   if (!recording) { try { await startRec(); } catch { addEvent('<span class="bad">Нет доступа к микрофону</span>'); } }
@@ -619,15 +824,60 @@ micBtn.onclick = async () => {
 
 /* ---------- настройки ---------- */
 const modal = document.getElementById('modal');
-const note = document.getElementById('set-note');
 document.getElementById('settings-btn').onclick = async () => {
   const s = await (await fetch('/api/settings')).json();
   document.getElementById('set-tts').checked = !!s.tts_enabled;
   document.getElementById('set-rate').value = s.tts_rate;
   document.getElementById('rate-val').textContent = s.tts_rate;
   document.getElementById('set-autosend').checked = !!s.voice_autosend;
-  note.textContent = '';
+  document.getElementById('m-note').textContent = '';
+  // Пресеты моделей
+  const data = await (await fetch('/api/model')).json();
+  const sel = document.getElementById('m-preset');
+  sel.innerHTML = '';
+  data.presets.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id; opt.textContent = p.name;
+    opt.dataset.url = p.base_url; opt.dataset.models = JSON.stringify(p.models); opt.dataset.hint = p.key_hint;
+    sel.appendChild(opt);
+  });
+  document.getElementById('m-url').value = data.current.base_url || '';
+  document.getElementById('m-model').value = data.current.model || '';
+  document.getElementById('m-key').value = '';
+  syncPresetHint();
   modal.classList.remove('hidden');
+};
+function syncPresetHint() {
+  const opt = document.getElementById('m-preset').selectedOptions[0];
+  if (!opt) return;
+  const models = JSON.parse(opt.dataset.models || '[]');
+  document.getElementById('m-hint').textContent = opt.dataset.hint || '';
+  const dl = document.getElementById('m-models');
+  dl.innerHTML = models.map(m => '<option value="' + m + '">').join('');
+}
+document.getElementById('m-preset').onchange = () => {
+  const opt = document.getElementById('m-preset').selectedOptions[0];
+  if (opt) {
+    document.getElementById('m-url').value = opt.dataset.url;
+    const models = JSON.parse(opt.dataset.models || '[]');
+    if (models.length) document.getElementById('m-model').value = models[0];
+  }
+  syncPresetHint();
+};
+document.getElementById('m-apply').onclick = async () => {
+  const note = document.getElementById('m-note');
+  note.className = 'ok-note'; note.textContent = 'Проверяю эндпоинт…';
+  const r = await fetch('/api/model', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      base_url: document.getElementById('m-url').value.trim(),
+      model: document.getElementById('m-model').value.trim(),
+      api_key: document.getElementById('m-key').value.trim(),
+    })});
+  const data = await r.json();
+  if (data.status !== 'ok') { note.className = 'why'; note.textContent = '❌ ' + (data.message || 'ошибка'); return; }
+  note.className = 'ok-note';
+  note.textContent = '✅ Модель переключена: ' + data.model + ' (сохранено для будущих запусков)';
+  refreshStatus();
 };
 document.getElementById('set-rate').oninput = (e) => {
   document.getElementById('rate-val').textContent = e.target.value;
@@ -639,10 +889,10 @@ document.getElementById('set-save').onclick = async () => {
     tts_rate: parseInt(document.getElementById('set-rate').value, 10),
     voice_autosend: document.getElementById('set-autosend').checked,
   };
-  const r = await (await fetch('/api/settings', {method: 'POST',
-    headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})).json();
-  note.textContent = r.status === 'ok' ? '✅ Сохранено' : 'Ошибка сохранения';
-  setTimeout(() => modal.classList.add('hidden'), 600);
+  await fetch('/api/settings', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)});
+  document.getElementById('set-save').textContent = '✅ Сохранено';
+  setTimeout(() => { document.getElementById('set-save').textContent = 'Сохранить голос'; }, 900);
 };
 modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
 
