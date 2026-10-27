@@ -61,6 +61,10 @@ async function createWindow() {
     show: false, // показываем после загрузки — без «мигания»
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
+  // Разрешаем микрофон для голосового ввода (без лишних диалогов).
+  win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => {
+    callback(permission === "media");
+  });
   Menu.setApplicationMenu(null);
 
   try {

@@ -18,6 +18,8 @@ dependencies = [
     "numpy>=1.26",
     "fastembed>=0.4",
     "typer>=0.12",
+    "pyttsx3>=2.90",
+    "vosk>=0.3.45",
     "rich>=13.7",
     "aiogram>=3.31.0",
     "pypdf>=6.21.2",
@@ -28,6 +30,7 @@ dependencies = [
     "google-auth-oauthlib>=1.5.0",
     "fastapi>=0.162.0",
     "uvicorn>=0.54.0",
+    "customtkinter",
 ]
 
 [project.scripts]
