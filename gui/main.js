@@ -30,22 +30,31 @@ function startBackend() {
   });
 }
 
-function waitBackend(tries = 90) {
-  // Ждём готовности FastAPI (загрузка модели/памяти занимает время).
+function pingOnce(timeoutMs = 1500) {
   return new Promise((resolve, reject) => {
-    const ping = (n) => {
-      if (quitting) return reject(new Error("закрыто"));
-      const req = http.get(`http://127.0.0.1:${PORT}/api/status`, (res) => {
-        res.resume();
-        resolve();
-      });
-      req.on("error", () => {
-        if (n <= 0) reject(new Error("ядро не поднялось"));
-        else setTimeout(() => ping(n - 1), 500);
-      });
-    };
-    ping(tries);
+    const req = http.get(`http://127.0.0.1:${PORT}/api/status`, {timeout: timeoutMs}, (res) => {
+      res.resume();
+      resolve();
+    });
+    req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
+    req.on("error", reject);
   });
+}
+
+async function waitBackend(maxMs = 180000) {
+  // Холодный старт Python (импорты, память, MCP) может занять минуту-две.
+  const started = Date.now();
+  let lastError = null;
+  while (Date.now() - started < maxMs && !quitting) {
+    try {
+      await pingOnce();
+      return;
+    } catch (e) {
+      lastError = e;
+      await new Promise((r) => setTimeout(r, 700));
+    }
+  }
+  throw lastError || new Error("ядро не поднялось за отведённое время");
 }
 
 async function createWindow() {
@@ -67,22 +76,26 @@ async function createWindow() {
   });
   Menu.setApplicationMenu(null);
 
+  // Сразу показываем окно с экраном загрузки — пользователь видит, что идёт работа.
+  await win.loadFile(path.join(__dirname, "loading.html"));
+  win.show();
   try {
     await waitBackend();
     await win.loadURL(`http://127.0.0.1:${PORT}/`);
+    console.log("[окно] интерфейс загружен");
   } catch (e) {
-    // Ядро не поднялось — показываем понятную заглушку вместо белого экрана.
+    // Ядро так и не поднялось — объясняем, что делать.
     await win.loadURL(
       "data:text/html;charset=utf-8," +
         encodeURIComponent(
           "<body style='background:#05080f;color:#dbe6f5;font-family:Segoe UI;display:flex;" +
             "align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:10px'>" +
-            "<h2>Не удалось запустить ядро Джарвиса</h2>" +
-            "<p style='color:#8291b8'>Проверьте, что окружение собрано: <code>uv sync</code> в папке проекта</p></body>"
+            "<h2>Ядро Джарвиса не запустилось</h2>" +
+            "<p style='color:#8291b8'>Запусти вручную и посмотри ошибку:<br>" +
+            "<code>.venv\\Scripts\\python.exe -m jarvis web --port 8123</code> в папке проекта</p></body>"
         )
     );
   }
-  win.show();
   return win;
 }
 
