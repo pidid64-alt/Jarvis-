@@ -83,6 +83,14 @@ class WebHub:
             except Exception:
                 self.clients.discard(queue)
 
+    def publish_nowait(self, event: dict) -> None:
+        """Синхронная публикация — безопасна внутри отменённой задачи."""
+        for queue in list(self.clients):
+            try:
+                queue.put_nowait(event)
+            except Exception:
+                self.clients.discard(queue)
+
     async def stream(self):
         queue: asyncio.Queue = asyncio.Queue()
         self.clients.add(queue)
@@ -252,14 +260,30 @@ def create_app(runtime: Runtime) -> FastAPI:
                         asyncio.create_task(
                             speak(spoken, rate=int(state["settings"].get("tts_rate", 185)))
                         )
+            except asyncio.CancelledError:
+                # Остановлено пользователем — сообщаем и выходим без «ошибки».
+                hub.publish_nowait({"type": "stopped"})
             except Exception as e:
                 log.exception("Ошибка обработки веб-сообщения")
                 await hub.publish({"type": "answer", "text": f"[Ошибка] {e}"})
             finally:
                 hub.busy = False
 
-        asyncio.create_task(run())
+        task = asyncio.create_task(run())
+        state["task"] = task
         return JSONResponse({"status": "ok"})
+
+    @app.post("/api/stop")
+    async def stop() -> JSONResponse:
+        """Остановить текущую генерацию (кнопка ⏹ в чате)."""
+        task = state.get("task")
+        was_running = task is not None and not task.done()
+        if was_running:
+            task.cancel()
+        # Ожидающие подтверждения тоже закрываем как «отклонено».
+        for request_id in list(hub.pending):
+            hub.resolve(request_id, False)
+        return JSONResponse({"status": "ok" if was_running else "idle"})
 
     @app.post("/api/confirm")
     async def confirm(request: Request) -> JSONResponse:
@@ -534,6 +558,7 @@ INDEX_HTML = """<!doctype html>
   #send:hover { filter: brightness(1.15); }
   #send:active { transform: scale(.95); }
   #send:disabled { opacity: .35; cursor: default; }
+  #send.stop { background: linear-gradient(135deg, #b91c1c, #ff5d5d); color: #fff; }
 
   .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex;
                 align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(4px); }
@@ -702,7 +727,13 @@ const addConfirm = (c) => {
 };
 
 const es = new EventSource('/api/events');
-es.onopen = () => document.getElementById('conn').textContent = 'подключено ✅';
+es.onopen = () => {
+  document.getElementById('conn').textContent = 'подключено ✅';
+  // После переподключения восстанавливаем индикатор, если генерация идёт.
+  fetch('/api/status').then(r => r.json()).then(s => {
+    if (s.busy && !chat.querySelector('.dots')) dots();
+  });
+};
 es.onerror = () => document.getElementById('conn').textContent = 'переподключение…';
 es.onmessage = (e) => {
   const ev = JSON.parse(e.data);
@@ -719,6 +750,12 @@ es.onmessage = (e) => {
   else if (ev.type === 'confirm') addConfirm(ev);
   else if (ev.type === 'reset') { hideWelcome(); push('🧹 Контекст диалога очищен', 'event'); }
   else if (ev.type === 'model_changed') addEvent('🔀 Модель переключена: <b>' + esc(ev.model) + '</b>');
+  else if (ev.type === 'stopped') {
+    chat.querySelector('.dots')?.remove();
+    addEvent('⏹ Остановлено');
+    setBusy(false);
+    if (pendingSend) { pendingSend = false; if (input.value.trim()) submit(); }
+  }
 };
 
 function refreshStatus() {
@@ -737,19 +774,29 @@ function refreshStatus() {
 }
 refreshStatus();
 
-function setBusy(v) { busy = v; send.disabled = v; input.disabled = v; if (!v) input.focus(); }
+// Ввод НЕ блокируется во время генерации: можно писать следующий вопрос.
+// Кнопка ➤ превращается в ⏹ (остановить). Enter во время генерации =
+// остановить текущий ответ и сразу отправить новый.
+let pendingSend = false;
+function setBusy(v) {
+  busy = v;
+  send.textContent = v ? '⏹' : '➤';
+  send.classList.toggle('stop', v);
+  input.focus();
+}
+async function doStop() { await fetch('/api/stop', {method: 'POST'}); }
 async function submit() {
   const text = input.value.trim();
-  if (!text || busy) return;
+  if (!text) return;
+  if (busy) { pendingSend = true; doStop(); return; }
   addMsg('user', text, false);
   input.value = '';
   setBusy(true);
   const r = await fetch('/api/chat', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({text})});
-  if (r.status === 409) { addEvent('Джарвис ещё отвечает на предыдущий запрос…'); setBusy(false); }
-  else if (r.status === 400) { addEvent('Пустой запрос'); setBusy(false); }
+  if (r.status === 400) { addEvent('Пустой запрос'); setBusy(false); }
 }
-send.onclick = submit;
+send.onclick = () => { if (busy) doStop(); else submit(); };
 input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
 
 document.getElementById('reset').onclick = async () => { await fetch('/api/reset', {method: 'POST'}); };

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import sqlite3
@@ -108,16 +109,20 @@ class MemoryStore:
         return [dict(r) for r in rows]
 
     async def _vector_search(self, query: str, top_k: int) -> list[dict]:
-        if not self._engine.ready:
+        # Внимание: .ready при первом обращении синхронно грузит ONNX-модель —
+        # поэтому даже проверку готовности делаем в потоке.
+        if not await asyncio.to_thread(lambda: self._engine.ready):
             return []
-        q = self._engine.embed_query(query)
+        # ONNX-инференс тяжёлый: считаем в потоке, иначе замораживаем
+        # весь цикл событий (чат, статусы, остановка перестают отвечать).
+        q = await asyncio.to_thread(self._engine.embed_query, query)
         if q is None:
             return []
         rows = await self._db.fetchall("SELECT fact_id, dim, vec FROM vectors")
         if not rows:
             return []
         vectors = [(r["fact_id"], np.frombuffer(r["vec"], dtype=np.float32)) for r in rows]
-        top = cosine_top_k(q, vectors, top_k)
+        top = await asyncio.to_thread(cosine_top_k, q, vectors, top_k)
         result = []
         for fact_id, _score in top:
             fact = await self.get_fact(fact_id)
@@ -126,9 +131,9 @@ class MemoryStore:
         return result
 
     async def _store_vector(self, fact_id: int, text: str) -> None:
-        if not self._engine.ready:
+        if not await asyncio.to_thread(lambda: self._engine.ready):
             return
-        embeddings = self._engine.embed_documents([text])
+        embeddings = await asyncio.to_thread(self._engine.embed_documents, [text])
         if not embeddings:
             return
         vec = embeddings[0]
